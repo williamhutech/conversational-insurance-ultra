@@ -1,0 +1,106 @@
+version: '3.8'
+
+# =============================================================================
+# Conversational Insurance Ultra - Local Development Environment
+# =============================================================================
+# Optional local services for development
+# Use hybrid approach: connect to cloud services (Supabase, Neo4j Aura) or run locally
+#
+# Usage:
+#   docker-compose up -d         # Start all services
+#   docker-compose up neo4j      # Start only Neo4j
+#   docker-compose down          # Stop all services
+
+services:
+  # ---------------------------------------------------------------------------
+  # Neo4j Graph Database (Optional local instance)
+  # ---------------------------------------------------------------------------
+  neo4j:
+    image: neo4j:5.16-community
+    container_name: insurance-neo4j
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      - NEO4J_AUTH=neo4j/password123  # Change in production
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - ./database/neo4j:/import  # Import claims data
+    networks:
+      - insurance-network
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "password123", "RETURN 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Redis (Optional for caching)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: insurance-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - insurance-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Backend API (FastAPI)
+  # ---------------------------------------------------------------------------
+  # Uncomment to run backend in Docker
+  # backend:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: insurance-backend
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     - ENVIRONMENT=development
+  #     - NEO4J_URI=bolt://neo4j:7687
+  #     - NEO4J_USER=neo4j
+  #     - NEO4J_PASSWORD=password123
+  #     - REDIS_URL=redis://redis:6379/0
+  #   env_file:
+  #     - .env
+  #   volumes:
+  #     - ./backend:/app/backend
+  #     - ./libs:/app/libs
+  #   depends_on:
+  #     - neo4j
+  #     - redis
+  #   networks:
+  #     - insurance-network
+  #   command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  insurance-network:
+    driver: bridge
+
+# =============================================================================
+# Notes:
+# - For production, use docker-compose.prod.yml
+# - Supabase and Mem0 are cloud services (no local containers needed)
+# - Uncomment backend service to run entire stack in Docker
+# - Default setup: Run backend/MCP locally, use cloud services + optional local Neo4j
+# =============================================================================

@@ -1,7 +1,66 @@
 [project]
-name = "conversational-finance"
+name = "conversational-insurance-ultra"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI-powered conversational insurance platform with FastMCP and FastAPI"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    # Core Framework
+    "fastapi>=0.108.0",
+    "uvicorn[standard]>=0.25.0",
+    "fastmcp>=0.1.0",
+
+    # Database Clients
+    "supabase>=2.3.0",
+    "neo4j>=5.16.0",
+    "mem0ai>=0.0.7",
+
+    # Document Processing & OCR
+    "pytesseract>=0.3.10",
+    "easyocr>=1.7.0",
+    "pypdf>=3.17.0",
+    "pdf2image>=1.16.3",
+    "pillow>=10.1.0",
+
+    # Payment Processing
+    "stripe>=7.8.0",
+
+    # Data Validation & Configuration
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "python-dotenv>=1.0.0",
+
+    # HTTP Client
+    "httpx>=0.26.0",
+
+    # AI & Embeddings
+    "anthropic>=0.8.0",
+    "openai>=1.6.0",
+
+    # Utilities
+    "python-multipart>=0.0.6",
+    "python-jose[cryptography]>=3.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=23.12.0",
+    "ruff>=0.1.9",
+    "mypy>=1.8.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true

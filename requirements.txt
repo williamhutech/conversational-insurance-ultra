@@ -1,0 +1,6 @@
+# Requirements will be generated after installing dependencies from pyproject.toml
+# Run: uv pip install -e .
+# Or: pip install -e .
+
+# Core dependencies are defined in pyproject.toml
+# This file can be regenerated with: pip freeze > requirements.txt
