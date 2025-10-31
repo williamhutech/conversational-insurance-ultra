@@ -66,6 +66,15 @@ class Settings(BaseSettings):
     neo4j_database: str = "neo4j"
 
     # -----------------------------------------------------------------------------
+    # Database: DynamoDB (Payment Records)
+    # -----------------------------------------------------------------------------
+    dynamodb_payments_table: str = "lea-payments-local"
+    dynamodb_endpoint: str | None = "http://localhost:8000"  # None for AWS DynamoDB
+    aws_region: str = "ap-southeast-1"
+    aws_access_key_id: str | None = "dummy"  # For local; real creds for AWS
+    aws_secret_access_key: str | None = "dummy"  # For local; real creds for AWS
+
+    # -----------------------------------------------------------------------------
     # Memory: Mem0 (Customer Conversation Memory)
     # -----------------------------------------------------------------------------
     mem0_api_key: str = Field(..., description="Mem0 API key")
@@ -88,6 +97,10 @@ class Settings(BaseSettings):
     stripe_publishable_key: str = Field(..., description="Stripe publishable key")
     stripe_webhook_secret: str | None = None
     stripe_currency: str = "SGD"
+
+    # Payment Page URLs
+    payment_success_url: str = "http://localhost:8085/success"
+    payment_cancel_url: str = "http://localhost:8085/cancel"
 
     # -----------------------------------------------------------------------------
     # OCR & Document Processing

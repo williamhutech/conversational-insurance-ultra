@@ -57,6 +57,48 @@ services:
       retries: 5
 
   # ---------------------------------------------------------------------------
+  # DynamoDB Local (Payment Records)
+  # ---------------------------------------------------------------------------
+  dynamodb:
+    image: amazon/dynamodb-local:2.5.2
+    container_name: insurance-dynamodb
+    user: "0:0"
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal/data"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - dynamodb_data:/home/dynamodblocal/data
+    networks:
+      - insurance-network
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/8000' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # DynamoDB Admin UI
+  # ---------------------------------------------------------------------------
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin
+    container_name: insurance-dynamodb-admin
+    environment:
+      - DYNAMO_ENDPOINT=http://dynamodb:8000
+      - AWS_REGION=ap-southeast-1
+      - AWS_ACCESS_KEY_ID=dummy
+      - AWS_SECRET_ACCESS_KEY=dummy
+    depends_on:
+      dynamodb:
+        condition: service_healthy
+    ports:
+      - "8010:8001"
+    networks:
+      - insurance-network
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
   # Backend API (FastAPI)
   # ---------------------------------------------------------------------------
   # Uncomment to run backend in Docker
@@ -73,6 +115,7 @@ services:
   #     - NEO4J_USER=neo4j
   #     - NEO4J_PASSWORD=password123
   #     - REDIS_URL=redis://redis:6379/0
+  #     - DYNAMODB_ENDPOINT=http://dynamodb:8000
   #   env_file:
   #     - .env
   #   volumes:
@@ -81,6 +124,7 @@ services:
   #   depends_on:
   #     - neo4j
   #     - redis
+  #     - dynamodb
   #   networks:
   #     - insurance-network
   #   command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
@@ -92,6 +136,8 @@ volumes:
     driver: local
   redis_data:
     driver: local
+  dynamodb_data:
+    driver: local
 
 networks:
   insurance-network:
@@ -102,5 +148,13 @@ networks:
 # - For production, use docker-compose.prod.yml
 # - Supabase and Mem0 are cloud services (no local containers needed)
 # - Uncomment backend service to run entire stack in Docker
-# - Default setup: Run backend/MCP locally, use cloud services + optional local Neo4j
+# - Default setup: Run backend/MCP locally, use cloud services + optional local services
+#
+# Services Included:
+#  - Neo4j: Graph database for policy relationships
+#  - Redis: Caching layer
+#  - DynamoDB Local: Payment records storage
+#  - DynamoDB Admin: Web UI at http://localhost:8010
+#
+# Payment services (webhook, pages) run embedded in FastAPI backend
 # =============================================================================
