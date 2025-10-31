@@ -15,8 +15,9 @@ from fastapi.responses import JSONResponse
 import logging
 
 from backend.config import settings
-# TODO: Uncomment when routers are implemented
-# from backend.api import policies, documents, quotations, purchases, analytics
+from backend.routers import purchase_router
+from backend.services.payment.stripe_webhook import app as webhook_app
+from backend.services.payment.payment_pages import app as pages_app
 
 # Configure logging
 logging.basicConfig(
@@ -118,9 +119,22 @@ async def health_check():
 
 
 # -----------------------------------------------------------------------------
-# API Routers (TODO: Uncomment when implemented)
+# API Routers
 # -----------------------------------------------------------------------------
 
+# Block 4: Purchase Execution
+app.include_router(
+    purchase_router,
+    prefix="/api"
+)
+
+# Mount Payment Webhook Handler (separate FastAPI app for isolation)
+app.mount("/webhook", webhook_app)
+
+# Mount Payment Pages (success/cancel pages)
+app.mount("", pages_app)
+
+# TODO: Add routers for other blocks when implemented
 # Block 1: Policy Intelligence Engine
 # app.include_router(
 #     policies.router,
@@ -139,13 +153,6 @@ async def health_check():
 #     quotations.router,
 #     prefix="/api/v1/quotations",
 #     tags=["Block 3: Auto-Quotation"]
-# )
-
-# Block 4: Purchase Execution
-# app.include_router(
-#     purchases.router,
-#     prefix="/api/v1/purchases",
-#     tags=["Block 4: Purchase Execution"]
 # )
 
 # Block 5: Analytics & Recommendations

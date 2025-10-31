@@ -27,7 +27,9 @@ import logging
 from typing import Any, Dict, List
 from fastmcp import FastMCP
 
-# TODO: Import tools when implemented
+from mcp_server.client.backend_client import BackendClient
+
+# TODO: Import remaining tools when implemented
 # from mcp_server.tools import (
 #     compare_policies,
 #     explain_coverage,
@@ -36,8 +38,6 @@ from fastmcp import FastMCP
 #     upload_document,
 #     extract_travel_data,
 #     generate_quotation,
-#     initiate_purchase,
-#     process_payment,
 #     get_recommendations,
 #     analyze_destination_risk,
 #     manage_conversation_memory,
@@ -56,6 +56,9 @@ mcp = FastMCP(
     version="0.1.0",
     description="AI-powered conversational insurance platform MCP server"
 )
+
+# Initialize backend client
+backend_client = BackendClient()
 
 
 # =============================================================================
@@ -247,51 +250,215 @@ async def generate_quotation(
 
 @mcp.tool()
 async def initiate_purchase(
-    quotation_id: str,
-    selected_policy_id: str,
-    customer_details: Dict[str, Any]
+    user_id: str,
+    quote_id: str,
+    amount: int,
+    currency: str,
+    product_name: str,
+    customer_email: str | None = None
 ) -> Dict[str, Any]:
     """
-    Initiate purchase process for selected policy.
+    Initiate purchase process for an insurance policy.
+
+    This tool creates a payment session and returns a checkout URL for the customer
+    to complete their purchase. Use this when a customer is ready to buy a policy.
 
     Args:
-        quotation_id: Quotation ID
-        selected_policy_id: Selected policy from quotation
-        customer_details: Customer information for policy generation
+        user_id: User/customer identifier
+        quote_id: Quote identifier for the policy being purchased
+        amount: Amount in cents (e.g., 15000 for $150.00 or SGD 150.00)
+        currency: Currency code (e.g., "SGD", "USD")
+        product_name: Product description (e.g., "Premium Travel Insurance - 7 Days Asia")
+        customer_email: Optional customer email for pre-filling checkout form
 
     Returns:
-        Purchase ID and Stripe payment intent
+        Dictionary with:
+        - payment_intent_id: Unique payment identifier for tracking
+        - checkout_url: Stripe checkout URL to redirect the customer
+        - session_id: Stripe session ID
+        - amount: Payment amount in cents
+        - currency: Payment currency
+        - expires_at: Checkout session expiration time (24 hours from creation)
 
-    TODO: Implement purchase initiation
-    TODO: Create Stripe payment intent
-    TODO: Return client secret for frontend
+    Example:
+        >>> result = await initiate_purchase(
+        ...     user_id="user_123",
+        ...     quote_id="quote_456",
+        ...     amount=15000,
+        ...     currency="SGD",
+        ...     product_name="Premium Travel Insurance - 7 Days Asia",
+        ...     customer_email="customer@example.com"
+        ... )
+        >>> print(f"Redirect user to: {result['checkout_url']}")
+
+    Note:
+        - The checkout session expires after 24 hours
+        - Payment status will be updated via webhook when customer completes payment
+        - Use check_payment_status() to poll payment status if needed
     """
-    logger.info(f"Initiating purchase for quotation {quotation_id}")
-    return {"error": "Not implemented"}
+    logger.info(f"Initiating purchase for user {user_id}, quote {quote_id}")
+
+    try:
+        result = await backend_client.initiate_payment(
+            user_id=user_id,
+            quote_id=quote_id,
+            amount=amount,
+            currency=currency,
+            product_name=product_name,
+            customer_email=customer_email
+        )
+
+        logger.info(f"Purchase initiated: {result.get('payment_intent_id')}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error initiating purchase: {e}")
+        return {
+            "error": str(e),
+            "message": "Failed to initiate purchase. Please try again or contact support."
+        }
 
 
 @mcp.tool()
-async def process_payment(
-    purchase_id: str,
-    payment_intent_id: str
-) -> Dict[str, Any]:
+async def check_payment_status(payment_intent_id: str) -> Dict[str, Any]:
     """
-    Process payment confirmation and generate policy.
+    Check the current status of a payment.
+
+    Use this tool to poll the payment status or verify if a customer has completed
+    their payment. Payment status is automatically updated via webhooks, so you
+    typically just need to check this endpoint.
 
     Args:
-        purchase_id: Purchase ID
-        payment_intent_id: Stripe payment intent ID
+        payment_intent_id: Payment intent identifier returned from initiate_purchase
 
     Returns:
-        Policy document and confirmation details
+        Dictionary with:
+        - payment_intent_id: Payment identifier
+        - payment_status: Current status (pending/completed/failed/expired/cancelled)
+        - stripe_session_id: Stripe session ID if available
+        - amount: Payment amount in cents
+        - currency: Payment currency
+        - product_name: Product description
+        - user_id: User identifier
+        - quote_id: Quote identifier
+        - created_at: Payment creation timestamp
+        - updated_at: Last update timestamp
+        - stripe_payment_intent: Stripe payment intent ID if completed
+        - failure_reason: Failure reason if payment failed
 
-    TODO: Implement payment confirmation
-    TODO: Verify payment with Stripe
-    TODO: Generate policy document
-    TODO: Send confirmation email
+    Example:
+        >>> status = await check_payment_status("pi_abc123...")
+        >>> if status['payment_status'] == 'completed':
+        ...     print("Payment successful! Generating policy...")
+        ... elif status['payment_status'] == 'pending':
+        ...     print("Waiting for customer to complete payment...")
     """
-    logger.info(f"Processing payment for purchase {purchase_id}")
-    return {"error": "Not implemented"}
+    logger.info(f"Checking payment status: {payment_intent_id}")
+
+    try:
+        result = await backend_client.get_payment_status(payment_intent_id)
+        logger.info(f"Payment status: {result.get('payment_status')}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error checking payment status: {e}")
+        return {
+            "error": str(e),
+            "message": "Failed to retrieve payment status. Please try again."
+        }
+
+
+@mcp.tool()
+async def complete_purchase(payment_intent_id: str) -> Dict[str, Any]:
+    """
+    Complete the purchase and generate policy after successful payment.
+
+    This tool should be called after verifying that payment status is "completed".
+    It generates the policy document and returns policy details.
+
+    Args:
+        payment_intent_id: Payment intent identifier
+
+    Returns:
+        Dictionary with:
+        - policy_id: Generated policy identifier
+        - policy_number: Human-readable policy number
+        - status: Purchase completion status
+        - payment_intent_id: Payment identifier
+        - quote_id: Quote identifier
+        - user_id: User identifier
+        - amount: Payment amount
+        - currency: Payment currency
+        - product_name: Product name
+        - policy_document_url: URL to download policy PDF (when implemented)
+        - created_at: Policy creation timestamp
+
+    Example:
+        >>> # First check payment is completed
+        >>> status = await check_payment_status("pi_abc123...")
+        >>> if status['payment_status'] == 'completed':
+        ...     policy = await complete_purchase("pi_abc123...")
+        ...     print(f"Policy generated: {policy['policy_number']}")
+
+    Note:
+        - Payment must be in "completed" status
+        - Policy document generation is currently in development
+        - Customer will receive confirmation email (when implemented)
+    """
+    logger.info(f"Completing purchase for payment: {payment_intent_id}")
+
+    try:
+        result = await backend_client.complete_purchase(payment_intent_id)
+        logger.info(f"Purchase completed: {result.get('policy_id')}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error completing purchase: {e}")
+        return {
+            "error": str(e),
+            "message": "Failed to complete purchase. Payment may not be completed yet."
+        }
+
+
+@mcp.tool()
+async def cancel_payment(payment_intent_id: str, reason: str | None = None) -> Dict[str, Any]:
+    """
+    Cancel a pending payment.
+
+    Use this when a customer wants to cancel their purchase before completing payment.
+    Only pending payments can be cancelled. Completed payments must be refunded instead.
+
+    Args:
+        payment_intent_id: Payment intent identifier
+        reason: Optional cancellation reason
+
+    Returns:
+        Dictionary with:
+        - payment_intent_id: Payment identifier
+        - status: Cancellation status
+        - message: Confirmation message
+
+    Example:
+        >>> result = await cancel_payment("pi_abc123...", reason="Customer changed mind")
+        >>> print(result['message'])
+
+    Note:
+        - Cannot cancel completed payments (use refund instead)
+        - Cancellation is immediate and cannot be undone
+    """
+    logger.info(f"Cancelling payment: {payment_intent_id}")
+
+    try:
+        result = await backend_client.cancel_payment(payment_intent_id, reason)
+        logger.info(f"Payment cancelled: {payment_intent_id}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error cancelling payment: {e}")
+        return {
+            "error": str(e),
+            "message": "Failed to cancel payment. It may already be completed."
+        }
 
 
 # =============================================================================
