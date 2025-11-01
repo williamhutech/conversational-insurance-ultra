@@ -125,15 +125,116 @@ class BackendClient:
     async def generate_quotation(
         self,
         customer_id: str,
-        travel_plan_id: Optional[str] = None,
-        manual_data: Optional[Dict[str, Any]] = None
+        trip_type: str,
+        departure_date: str,
+        return_date: Optional[str] = None,
+        departure_country: str = "SG",
+        arrival_country: str = "CN",
+        adults_count: int = 1,
+        children_count: int = 0,
+        market: str = "SG",
+        language_code: str = "en",
+        channel: str = "white-label"
     ) -> Dict[str, Any]:
         """
-        Generate quotation.
+        Generate quotation via backend API.
 
-        TODO: Implement POST /api/v1/quotations/generate
+        Args:
+            customer_id: Customer ID
+            trip_type: "RT" or "ST"
+            departure_date: Departure date (YYYY-MM-DD)
+            return_date: Return date (YYYY-MM-DD, optional for ST)
+            departure_country: Departure country ISO code
+            arrival_country: Arrival country ISO code
+            adults_count: Number of adults
+            children_count: Number of children
+            market: Market code
+            language_code: Language code
+            channel: Distribution channel
+
+        Returns:
+            Quotation response with offers
+
+        Raises:
+            httpx.HTTPError: If request fails
         """
-        pass
+        try:
+            response = await self.client.post(
+                "/api/quotation/generate",
+                json={
+                    "customer_id": customer_id,
+                    "trip_type": trip_type,
+                    "departure_date": departure_date,
+                    "return_date": return_date,
+                    "departure_country": departure_country,
+                    "arrival_country": arrival_country,
+                    "adults_count": adults_count,
+                    "children_count": children_count,
+                    "market": market,
+                    "language_code": language_code,
+                    "channel": channel
+                }
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPError as e:
+            logger.error(f"HTTP Error generating quotation: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response body: {e.response.text}")
+            raise
+
+    async def create_selection(
+        self,
+        user_id: str,
+        quote_id: str,
+        selected_offer_id: str,
+        payment_id: Optional[str] = None,
+        insureds: Optional[list[Dict[str, Any]]] = None,
+        main_contact: Optional[Dict[str, Any]] = None,
+        total_price: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Create selection record via backend API.
+
+        Args:
+            user_id: User ID
+            quote_id: Quote ID
+            selected_offer_id: Selected offer ID from quotation
+            payment_id: Payment intent ID (if payment initiated)
+            insureds: Optional list of insured persons
+            main_contact: Optional main contact info
+            total_price: Total price
+
+        Returns:
+            Selection response
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        try:
+            response = await self.client.post(
+                "/api/quotation/selection/create",
+                json={
+                    "user_id": user_id,
+                    "quote_id": quote_id,
+                    "selected_offer_id": selected_offer_id,
+                    "payment_id": payment_id,
+                    "insureds": insureds,
+                    "main_contact": main_contact,
+                    "total_price": total_price
+                }
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPError as e:
+            logger.error(f"HTTP Error creating selection: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response body: {e.response.text}")
+            raise
 
     # -------------------------------------------------------------------------
     # Block 4: Purchase & Payment
