@@ -1,0 +1,17 @@
+8. For TravelEasy®, the insured persons must be in good health or free from physical defects.
+
+
+9. To be eligible for cover under TravelEasy® Pre-Ex plans, the insured person must meet all the conditions stated under section 52 - Pre-Ex Critical Care.
+
+
+# DEFINITION OF WORDS
+
+
+(Applicable to the whole policy)
+
+
+Certain words have been defined below. These have the same meaning wherever they are used in the policy. They appear in **bold print** (for example, **insured** **person).**
+
+
+
+<table><tr><td>TERM</td><td>DEFINITION</td></tr><tr><td>Accident</td><td>A sudden and unexpected event which results in bodily injury, disability or death of<br>the insured person.</td></tr><tr><td>Act of terrorism</td><td>An act, including using force or violence, of any person or group of people, whether<br>acting alone or on behalf of or in connection with any organisation, committed for<br>political, religious or ideological purposes including the intention to influence any<br>government or to put the civilian population in fear for those purposes.</td></tr><tr><td>Acute onset of a pre-existing<br>medical condition</td><td>Refers to a sudden, unexpected and rapid deterioration of the insured person's pre-<br>existing medical condition resulting in a serious medical condition.</td></tr><tr><td>Additional travel expenses</td><td>The necessary administrative costs and other expenses due to change of traveller (for section 23) or travel itinerary including the cost of economy class public transport or standard room, provided the original air ticket or accommodation booking cannot be amended at a lower cost, less any refund recovered. The transport or accommodation of the altered travel itinerary must not be of higher class or category that which was purchased in the original itinerary.</td></tr><tr><td>Adult</td><td>A person aged 18 years or above at the start of any trip.</td></tr><tr><td>Child, children</td><td>A person who is aged over one month and below 18 years, or below 23 years if<br>studying full-time in a recognised institution of higher learning, at the start of any<br>trip. Recognised institute of higher learning refers to Singapore or overseas<br>education institutions which are licensed by the government of the country to<br>provide post-secondary or higher education.</td></tr><tr><td>COVID-19</td><td>refers to:<br>1. Coronavirus disease (COVID-19);<br>2. Severe acute respiratory syndrome coronavirus 2 (SARS-CoV-2); or<br>3. any mutation or variation of SARS-CoV-2; or COVID-19.</td></tr><tr><td>Dentist</td><td>A legally registered dental practitioner qualified to practise in line with the laws of<br>the country in which the practice is granted. The dentist must not be an insured<br>person, an insured person's family member, travel companion, a business partner,<br>an employee or employer of an insured person, or a person related to an insured<br>person in any way.</td></tr><tr><td>Doctor</td><td>A legally registered medical practitioner qualified to practise western medicine and<br>surgery in line with the laws of the country in which the practice is granted. The<br>doctor must not be an insured person, an insured person's family member, travel<br>companion, a business partner, an employee or employer of an insured person, or a<br>person related to an insured person in any way.</td></tr><tr><td>Entertainment ticket</td><td>A ticket granting admission to theme parks, musicals, plays, theatre or drama<br>performances, concerts and sports events but excludes movie tickets.</td></tr></table>
