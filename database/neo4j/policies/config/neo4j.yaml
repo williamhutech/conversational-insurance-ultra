@@ -1,0 +1,89 @@
+# Neo4j Configuration
+# Database connection and import settings
+
+connection:
+  uri: "bolt://localhost:7687"
+  username: "neo4j"
+  password: "12345678"  # Override with environment variable NEO4J_PASSWORD
+  database: "insurance"
+
+import:
+  # Batch sizes for bulk operations
+  batch_sizes:
+    nodes: 1000          # Node batch size
+    edges: 1000          # Edge batch size
+    constraints: 100     # Constraint batch size
+
+  # Performance tuning
+  performance:
+    pool_connections: 20
+    pool_maxsize: 100
+    retry_attempts: 5
+    backoff_factor: 1.5
+
+schema:
+  # Node labels
+  node_labels:
+    - "Concept"
+    - "QA"
+
+  # Constraint definitions
+  constraints:
+    - label: "Concept"
+      property: "id"
+      type: "unique"
+    - label: "QA"
+      property: "id"
+      type: "unique"
+
+  # Index definitions
+  indexes:
+    # Standard indexes
+    - label: "Concept"
+      property: "type"
+      type: "range"
+    - label: "Concept"
+      property: "text"
+      type: "range"
+    - label: "Concept"
+      property: "created_at"
+      type: "range"
+    - label: "QA"
+      property: "type"
+      type: "range"
+    - label: "QA"
+      property: "text"
+      type: "range"
+    - label: "QA"
+      property: "created_at"
+      type: "range"
+
+    # Full-text search indexes
+    - name: "concept_text_fulltext"
+      type: "fulltext"
+      labels: ["Concept"]
+      properties: ["text"]
+    - name: "qa_text_fulltext"
+      type: "fulltext"
+      labels: ["QA"]
+      properties: ["text"]
+
+    # Vector index for semantic search
+    - name: "embedding_index"
+      type: "vector"
+      label: "Memory"
+      property: "embedding"
+      dimension: 768
+      similarity_function: "cosine"
+
+relationships:
+  # Relationship types
+  types:
+    - "RELATED_TO"
+    - "CONTAINS"
+    - "REFERENCES"
+
+  # Default properties
+  default_properties:
+    created_at: "timestamp"
+    relationship_type: "string"

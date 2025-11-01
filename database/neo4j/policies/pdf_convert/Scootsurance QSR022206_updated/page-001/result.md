@@ -1,0 +1,16 @@
+<table><tr><td>Benefit</td><td>Coverage</td><td>Maximum Limit Payable Return Trip (SGD)</td><td>Maximum Limit Payable One-Way Trip (SGD)</td></tr><tr><td>16</td><td>Baggage Delay<br/>Pays &#36;200 per 6 hours</td><td>&#36;800</td><td>&#36;800</td></tr><tr><td>17</td><td>Loss of/Damage to Personal Belongings<br/>Max &#36;200 per article or set of articles<br/>Max &#36;500 in total for all Valuables</td><td>&#36;2,000</td><td>&#36;2,000</td></tr><tr><td>18</td><td>Loss of Passport &amp; Money<br/>Max &#36;300 for Loss of Money</td><td>&#36;1,000</td><td>&#36;1,000</td></tr><tr><td>19</td><td>Personal Liability whilst Overseas</td><td>&#36;500,000</td><td>N.A.</td></tr><tr><td>20</td><td>Hijacking<br/>Pays &#36;100 per 6 hours</td><td>&#36;2,000</td><td>N.A.</td></tr><tr><td>21</td><td>Full Terrorism Cover</td><td>Included</td><td>Included</td></tr><tr><td colspan="4">EMERGENCY MEDICAL AND TRAVEL ASSISTANCE HOTLINE</td></tr><tr><td>22</td><td>24-hour Emergency Medical Assistance</td><td>Included</td><td>N.A.</td></tr><tr><td>23</td><td>24-Hour Travel Assistance</td><td>Included</td><td>N.A.</td></tr><tr><td colspan="4">SUPPLEMENTARY BENEFITS</td></tr><tr><td>24</td><td>Automatic extension of Policy period</td><td>Included</td><td>N.A.</td></tr><tr><td>25</td><td>Disruption Benefit</td><td>&#36;200</td><td>&#36;200</td></tr><tr><td colspan="4">COVID-19 BENEFITS</td></tr><tr><td>26</td><td>Medical expenses whilst overseas &amp; Emergency Medical Evacuation and Repatriation due to COVID-19</td><td>&#36;70,000</td><td>N.A.</td></tr><tr><td>27</td><td>Trip Cancellation due to COVID-19</td><td>&#36;1,000</td><td>N.A.</td></tr><tr><td>28</td><td>Trip Curtailment/Rearrangement due to COVID-19</td><td>&#36;1,000</td><td>N.A.</td></tr><tr><td>29</td><td>Overseas Hospitalisation Allowance due to COVID-19<br/>Pays &#36;50 per day</td><td>&#36;1,000</td><td>&#36;1,000</td></tr><tr><td>30</td><td>Overseas Quarantine Allowance due to COVID-19<br/>Pays &#36;100 per day</td><td>&#36;1,000</td><td>N.A.</td></tr><tr><td colspan="4">KRISFLYER MEMBER EXCLUSIVE BENEFITS</td></tr><tr><td>31</td><td>Hospital Income in Singapore<br/>&#36;100 for 24 hours period of Hospital Confinement</td><td>&#36;1,000</td><td>N.A.</td></tr><tr><td>32</td><td>Fraudulent Credit Card Usage</td><td>&#36;1,000</td><td>N.A.</td></tr><tr><td>33</td><td>Additional Accidental Death and Permanent Disablement Benefit (while on Scheduled Flight)<br/>12 to 69 years old<br/>70 to 74 years old<br/>Below 12 years old</td><td>&#36;50,000<br/>&#36;25,000<br/>&#36;5,000</td><td>&#36;50,000<br/>&#36;25,000<br/>&#36;5,000</td></tr><tr><td>34</td><td>Treatment by Physician (cost of TCM, physiotherapy, chiropractor incurred whilst overseas)</td><td>&#36;200</td><td>N.A.</td></tr><tr><td>35</td><td>Rental Car Late Fees</td><td>&#36;100</td><td>N.A.</td></tr><tr><td>36</td><td>Legal Expenses and Assistance whilst Overseas</td><td>&#36;300</td><td>N.A.</td></tr></table>
+
+
+# PART 2: IMPORTANT CONDITIONS
+
+
+The insurance operates only if You meet all of the following conditions.
+
+
+1. Your trip must begin in Singapore.
+
+
+2. At the time of arranging the trip or taking out this insurance, neither You nor any other insured person is aware of any circumstances which are likely to lead to a claim under the Policy.
+
+
+3. At
