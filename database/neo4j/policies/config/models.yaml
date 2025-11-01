@@ -19,7 +19,7 @@ models:
 
   # Stage 3: Fact extraction from policies
   fact_extractor:
-    name: "gpt-4o-mini"
+    name: "gpt-4o"
     use_responses_api: false
 
   # Stage 4: Concept graph expansion
@@ -34,7 +34,7 @@ models:
 
   # Stage 7: QA synthesis for distillation and validation
   qa_synthesizer:
-    name: "gpt-4.1"
+    name: "gpt-4.1-mini"
     use_responses_api: false
 
   # Advanced reasoning model (optional)
@@ -45,5 +45,5 @@ models:
   # Embedding model for semantic similarity
   embedding:
     name: "sentence-transformers/all-mpnet-base-v2"
-    device: "cuda"  # Options: "cuda", "mps", "cpu"
+    device: "mps"  # Options: "cuda", "mps", "cpu"
     trust_remote_code: true

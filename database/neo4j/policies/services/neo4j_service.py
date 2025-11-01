@@ -4,7 +4,6 @@ Handles schema creation, bulk import, indexes, and verification for knowledge gr
 """
 
 import time
-import json
 import ijson
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -119,6 +118,13 @@ class Neo4jService:
                     FOR (n:QA) REQUIRE n.id IS UNIQUE
                 """)
                 print("✅ Created unique constraint on QA.id")
+
+                # NEW: Node id unique constraint to index-back MATCH/MERGE in imports
+                session.run("""
+                    CREATE CONSTRAINT node_id_unique IF NOT EXISTS
+                    FOR (n:Node) REQUIRE n.id IS UNIQUE
+                """)
+                print("✅ Created unique constraint on Node.id")
 
             return True
 
@@ -238,7 +244,7 @@ class Neo4jService:
                         batch = []
 
                         # Progress update
-                        if success_count % (batch_size * 10) == 0:
+                        if success_count % (batch_size / 100) == 0:
                             elapsed = time.time() - start_time
                             rate = success_count / elapsed if elapsed > 0 else 0
                             print(f"  Imported: {success_count:,} edges | "
@@ -263,12 +269,12 @@ class Neo4jService:
 
     def create_indexes(self) -> bool:
         """
-        Create indexes for query performance.
+        Create indexes for query performance (MemOS-compatible).
 
         Creates:
-        - Property indexes on type, text, created_at
-        - Full-text search indexes
-        - Vector index for semantic search
+        - Property indexes on type, memory_type, status, memory, created_at
+        - Full-text search index on memory content
+        - Vector index for semantic search on embeddings
         """
         print("\n" + "=" * 60)
         print("CREATING INDEXES")
@@ -279,41 +285,34 @@ class Neo4jService:
                 self.connect()
 
             with self.driver.session(database=self.database) as session:
-                # Property indexes
+                # Property indexes for MemOS fields
                 indexes = [
-                    "CREATE INDEX concept_type_idx IF NOT EXISTS FOR (n:Concept) ON (n.type)",
-                    "CREATE INDEX concept_text_idx IF NOT EXISTS FOR (n:Concept) ON (n.text)",
-                    "CREATE INDEX concept_created_idx IF NOT EXISTS FOR (n:Concept) ON (n.created_at)",
-                    "CREATE INDEX qa_type_idx IF NOT EXISTS FOR (n:QA) ON (n.type)",
-                    "CREATE INDEX qa_text_idx IF NOT EXISTS FOR (n:QA) ON (n.text)",
-                    "CREATE INDEX qa_created_idx IF NOT EXISTS FOR (n:QA) ON (n.created_at)",
+                    "CREATE INDEX node_type_idx IF NOT EXISTS FOR (n:Node) ON (n.type)",
+                    "CREATE INDEX node_memory_type_idx IF NOT EXISTS FOR (n:Node) ON (n.memory_type)",
+                    "CREATE INDEX node_status_idx IF NOT EXISTS FOR (n:Node) ON (n.status)",
+                    "CREATE INDEX node_memory_idx IF NOT EXISTS FOR (n:Node) ON (n.memory)",
+                    "CREATE INDEX node_created_idx IF NOT EXISTS FOR (n:Node) ON (n.created_at)",
                 ]
 
                 for index_query in indexes:
                     session.run(index_query)
-                    print(f"✅ Index created")
+                    print(f"✅ Property index created")
 
-                # Full-text search indexes
+                # Full-text search index on memory content
                 try:
                     session.run("""
-                        CREATE FULLTEXT INDEX concept_text_fulltext IF NOT EXISTS
-                        FOR (n:Concept) ON EACH [n.text]
+                        CREATE FULLTEXT INDEX node_memory_fulltext IF NOT EXISTS
+                        FOR (n:Node) ON EACH [n.memory]
                     """)
-                    print("✅ Full-text index created for Concept.text")
-
-                    session.run("""
-                        CREATE FULLTEXT INDEX qa_text_fulltext IF NOT EXISTS
-                        FOR (n:QA) ON EACH [n.text]
-                    """)
-                    print("✅ Full-text index created for QA.text")
+                    print("✅ Full-text index created for Node.memory")
                 except Exception as e:
                     print(f"⚠️  Full-text index creation failed: {e}")
 
-                # Vector index for semantic search
+                # Vector index for semantic search on embeddings
                 try:
                     session.run("""
-                        CREATE VECTOR INDEX embedding_vector_idx IF NOT EXISTS
-                        FOR (n:Concept|QA) ON (n.embedding)
+                        CREATE VECTOR INDEX node_embedding_vector_idx IF NOT EXISTS
+                        FOR (n:Node) ON (n.embedding)
                         OPTIONS {indexConfig: {
                             `vector.dimensions`: 768,
                             `vector.similarity_function`: 'cosine'
@@ -378,111 +377,119 @@ class Neo4jService:
             return obj
 
     def _prepare_node(self, node: Dict) -> Dict:
-        """Prepare node data for import."""
+        """Prepare node data for import (MemOS-compatible structure from Stage 8)."""
         node = self._clean_data_types(node)
+        metadata = node.get('metadata', {})
 
         return {
             'id': node.get('id'),
-            'type': node.get('type'),
-            'text': node.get('text', ''),
-            'embedding': str(node.get('embedding', [])),  # Store as string
-            'metadata': json.dumps(node.get('metadata', {}))  # Store as JSON string
+            'memory': node.get('memory', ''),                    # Main content (concept name or QA text)
+            'type': metadata.get('type', ''),                    # Extract from metadata
+            'memory_type': metadata.get('memory_type', ''),      # MemOS field
+            'status': metadata.get('status', ''),                # MemOS field
+            'entities': metadata.get('entities', []),            # List of entity names
+            'tags': metadata.get('tags', []),                    # List of tags
+            'embedding': metadata.get('embedding', []),          # Embedding vector (list of floats)
+            'created_at': metadata.get('created_at', ''),        # ISO datetime string
+            'usage': metadata.get('usage', []),                  # Usage history (empty list)
+            'background': metadata.get('background', '')         # Background info (empty string)
         }
 
     def _execute_node_batch(self, batch: List[Dict]) -> int:
-        """Execute node batch import."""
-        cypher_query = """
-        UNWIND $batch AS nodeData
-        MERGE (n {id: nodeData.id})
-        SET n += {
-            type: nodeData.type,
-            text: nodeData.text,
-            embedding: nodeData.embedding,
-            metadata: nodeData.metadata
-        }
-        WITH n, nodeData
-        CALL apoc.create.addLabels(n, [nodeData.type]) YIELD node
-        RETURN count(node) as imported
+        """Execute node batch import (MemOS-compatible properties)."""
+        cypher = """
+        UNWIND $batch AS row
+        MERGE (n:Node {id: row.id})
+        SET n.memory = row.memory,
+            n.type = row.type,
+            n.memory_type = row.memory_type,
+            n.status = row.status,
+            n.entities = row.entities,
+            n.tags = row.tags,
+            n.embedding = row.embedding,
+            n.created_at = datetime(row.created_at),
+            n.usage = row.usage,
+            n.background = row.background
+        RETURN count(n) AS imported
         """
-
-        # Simplified version without apoc
-        cypher_query = """
-        UNWIND $batch AS nodeData
-        CALL apoc.merge.node(
-            [nodeData.type],
-            {id: nodeData.id},
-            nodeData,
-            {}
-        ) YIELD node
-        RETURN count(node) as imported
-        """
-
-        # Most compatible version
-        cypher_query = """
-        UNWIND $batch AS nodeData
-        CALL {
-            WITH nodeData
-            MERGE (n {id: nodeData.id})
-            SET n.type = nodeData.type,
-                n.text = nodeData.text,
-                n.embedding = nodeData.embedding,
-                n.metadata = nodeData.metadata
-            WITH n, nodeData
-            CALL apoc.create.addLabels(n, [nodeData.type]) YIELD node
-            RETURN node
-        }
-        RETURN count(node) as imported
-        """
-
-        # Fallback without APOC
-        cypher_query = """
-        UNWIND $batch AS nodeData
-        CALL {
-            WITH nodeData
-            MERGE (n:Node {id: nodeData.id})
-            SET n.type = nodeData.type,
-                n.text = nodeData.text,
-                n.embedding = nodeData.embedding,
-                n.metadata = nodeData.metadata,
-                n.created_at = datetime()
-            RETURN n
-        }
-        RETURN count(n) as imported
-        """
-
         try:
             with self.driver.session(database=self.database) as session:
-                result = session.run(cypher_query, batch=batch)
-                return result.single()['imported']
+                res = session.run(cypher, batch=batch)
+                return res.single()["imported"]
         except Exception as e:
             print(f"  Batch error: {e}")
             return 0
 
     def _execute_edge_batch(self, batch: List[Dict]) -> int:
-        """Execute edge batch import."""
-        cypher_query = """
-        UNWIND $batch AS edgeData
-        MATCH (source {id: edgeData.source})
-        MATCH (target {id: edgeData.target})
-        MERGE (source)-[r:RELATED_TO]->(target)
-        SET r.type = edgeData.type,
-            r.created_at = datetime(edgeData.created_at)
-        RETURN count(r) as imported
+        """Execute edge batch import with dynamic relationship types (RELATE_TO or PARENT)."""
+        # Use APOC for dynamic relationship type creation
+        cypher = """
+        UNWIND $batch AS row
+        MATCH (s:Node {id: row.source})
+        MATCH (t:Node {id: row.target})
+        CALL apoc.create.relationship(s, row.type, {created_at: datetime(row.created_at)}, t)
+        YIELD rel
+        RETURN count(rel) AS imported
         """
-
         try:
             with self.driver.session(database=self.database) as session:
-                result = session.run(cypher_query, batch=batch)
-                return result.single()['imported']
+                res = session.run(cypher, batch=batch)
+                return res.single()["imported"]
         except Exception as e:
-            print(f"  Edge batch error: {e}")
-            return 0
+            # If APOC is not available, fall back to separate batches by type
+            print(f"  Edge batch error (possibly APOC not installed): {e}")
+            print(f"  Falling back to type-specific batches...")
+            return self._execute_edge_batch_fallback(batch)
+
+    def _execute_edge_batch_fallback(self, batch: List[Dict]) -> int:
+        """Fallback edge import without APOC - separate batches by relationship type."""
+        # Group by relationship type
+        relate_to_batch = [e for e in batch if e.get('type') == 'RELATE_TO']
+        parent_batch = [e for e in batch if e.get('type') == 'PARENT']
+
+        total_imported = 0
+
+        # Import RELATE_TO relationships
+        if relate_to_batch:
+            cypher_relate = """
+            UNWIND $batch AS row
+            MATCH (s:Node {id: row.source})
+            MATCH (t:Node {id: row.target})
+            MERGE (s)-[r:RELATE_TO]->(t)
+            SET r.created_at = datetime(row.created_at)
+            RETURN count(r) AS imported
+            """
+            try:
+                with self.driver.session(database=self.database) as session:
+                    res = session.run(cypher_relate, batch=relate_to_batch)
+                    total_imported += res.single()["imported"]
+            except Exception as e:
+                print(f"  RELATE_TO batch error: {e}")
+
+        # Import PARENT relationships
+        if parent_batch:
+            cypher_parent = """
+            UNWIND $batch AS row
+            MATCH (s:Node {id: row.source})
+            MATCH (t:Node {id: row.target})
+            MERGE (s)-[r:PARENT]->(t)
+            SET r.created_at = datetime(row.created_at)
+            RETURN count(r) AS imported
+            """
+            try:
+                with self.driver.session(database=self.database) as session:
+                    res = session.run(cypher_parent, batch=parent_batch)
+                    total_imported += res.single()["imported"]
+            except Exception as e:
+                print(f"  PARENT batch error: {e}")
+
+        return total_imported
 
     def full_import_pipeline(
         self,
         json_file_path: Path,
         node_batch_size: int = 1000,
-        edge_batch_size: int = 1000
+        edge_batch_size: int = 10000
     ) -> Dict[str, Any]:
         """
         Complete import pipeline: schema → nodes → edges → indexes → verify.
@@ -513,11 +520,23 @@ class Neo4jService:
 
         # Step 3: Import nodes
         print("\n[Step 3] Importing nodes...")
+        nodes_start = time.time()
         nodes_imported = self.bulk_import_nodes(json_file_path, node_batch_size)
+        nodes_elapsed = time.time() - nodes_start
+        if nodes_elapsed > 0:
+            print(f"  Avg speed (nodes): {nodes_imported / nodes_elapsed:.1f} nodes/sec")
+        else:
+            print("  Avg speed (nodes): n/a (elapsed time ~0)")
 
         # Step 4: Import edges
         print("\n[Step 4] Importing edges...")
+        edges_start = time.time()
         edges_imported = self.bulk_import_edges(json_file_path, edge_batch_size)
+        edges_elapsed = time.time() - edges_start
+        if edges_elapsed > 0:
+            print(f"  Avg speed (edges): {edges_imported / edges_elapsed:.1f} edges/sec")
+        else:
+            print("  Avg speed (edges): n/a (elapsed time ~0)")
 
         # Step 5: Create indexes
         print("\n[Step 5] Creating indexes...")
@@ -535,7 +554,11 @@ class Neo4jService:
         print("=" * 60)
         print(f"Total time: {total_time/60:.1f} minutes")
         print(f"Nodes imported: {nodes_imported:,}")
+        if 'nodes_elapsed' in locals() and nodes_elapsed > 0:
+            print(f"Avg speed (nodes): {nodes_imported / nodes_elapsed:.1f} nodes/sec")
         print(f"Edges imported: {edges_imported:,}")
+        if 'edges_elapsed' in locals() and edges_elapsed > 0:
+            print(f"Avg speed (edges): {edges_imported / edges_elapsed:.1f} edges/sec")
         print("=" * 60)
 
         return {

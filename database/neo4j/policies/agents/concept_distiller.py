@@ -24,9 +24,9 @@ class ConceptDistillerPrompt:
     @staticmethod
     def get_system_prompt() -> str:
         """Get system prompt for concept distillation."""
-        return """You are an experienced insurance advisor with 15+ years of expertise in personal and commercial insurance products. Your task is to create high-quality educational content for training insurance agents and educating customers about insurance concepts.
+        return """You are a friendly insurance educator who explains insurance concepts in everyday language. Your goal is to help regular people understand insurance without confusing jargon.
 
-Your generated questions must reflect real customer inquiries and require practical insurance knowledge - avoid simple definitional questions."""
+Write like you're having a conversation with a friend over coffee - clear, warm, and practical."""
 
     @staticmethod
     def get_user_prompt(concept: str, personality: str) -> str:
@@ -40,23 +40,25 @@ Your generated questions must reflect real customer inquiries and require practi
         Returns:
             Formatted user prompt
         """
-        return f"""**TARGET CONCEPT: {concept}**
+        return f"""**CONCEPT: {concept}**
 
-**CUSTOMER PERSONA:** {personality}
+**CUSTOMER:** {personality}
 
-Acting as this specific customer persona, generate exactly 3 diverse insurance-related questions about this concept, each with complete educational materials. Follow these requirements:
+Generate exactly 3 questions this customer would naturally ask, following this distribution:
+- 1 **Explanation**: "What does [concept] actually mean/cover?"
+- 1 **Eligibility**: "Am I covered for [specific situation]?"
+- 1 **Scenario**: "What happens if [real-life event]?"
 
-**QUESTION DESIGN PRINCIPLES:**
-1. Questions should reflect this persona's specific situation, concerns, and knowledge level
-2. Focus on practical insurance scenarios this persona would realistically encounter
-3. Every detail mentioned must be RELEVANT to the insurance decision - avoid unnecessary information
-4. Questions should require understanding of how {concept} applies to real insurance situations
-5. **AVOID simple factual questions** - require practical application and decision-making
+**REQUIREMENTS:**
+1. **Conversational tone** - write like you're texting a friend
+2. **No jargon** - use everyday words anyone can understand
+3. **Practical focus** - real situations this customer faces
+4. **Relevant details only** - every fact must matter for the decision
 
-**KNOWLEDGE FACTS REQUIREMENTS:**
-- Each fact must start with the concept name as the subject
-- Focus on practical applications, coverage implications, claim scenarios
-- Include regulatory or legal aspects when relevant
+**KNOWLEDGE FACTS:**
+- Start each with "{concept}..."
+- Explain in plain language (avoid: premium, deductible, exclusion → use: cost, out-of-pocket, not covered)
+- Focus on what matters in real life
 
 **OUTPUT FORMAT (strict JSON):**
 {{
@@ -64,42 +66,20 @@ Acting as this specific customer persona, generate exactly 3 diverse insurance-r
   "questions": [
     {{
       "question_id": 1,
-      "question": "Insurance scenario question 1 from this persona's perspective...",
-      "reasoning_guidance": "Step-by-step insurance thinking process 1...",
+      "question": "Conversational question 1...",
+      "reasoning_guidance": "How to think through this step-by-step in plain language...",
       "knowledge_facts": [
-        "{concept} fact 1...",
-        "{concept} fact 2...",
-        "{concept} fact 3..."
+        "{concept} plain-language fact 1...",
+        "{concept} plain-language fact 2..."
       ],
-      "final_answer": "Comprehensive insurance answer...",
-      "best_to_know": "Information about the customer/context/product that would help answer this question better"
-    }},
-    {{
-      "question_id": 2,
-      "question": "Insurance scenario question 2 from this persona's perspective...",
-      "reasoning_guidance": "Step-by-step insurance thinking process 2...",
-      "knowledge_facts": [
-        "{concept} fact 1...",
-        "{concept} fact 2..."
-      ],
-      "final_answer": "Comprehensive insurance answer...",
-      "best_to_know": "Information about the customer/context/product that would help answer this question better"
-    }},
-    {{
-      "question_id": 3,
-      "question": "Insurance scenario question 3 from this persona's perspective...",
-      "reasoning_guidance": "Step-by-step insurance thinking process 3...",
-      "knowledge_facts": [
-        "{concept} fact 1...",
-        "{concept} fact 2..."
-      ],
-      "final_answer": "Comprehensive insurance answer...",
-      "best_to_know": "Information about the customer/context/product that would help answer this question better"
-    }}
+      "final_answer": "Clear, jargon-free answer...",
+      "best_to_know": "What context would help give a better answer"
+    }}，
+    ... (total 3 questions)
   ]
 }}
 
-Generate the educational content now from this customer's perspective."""
+Generate now in this customer's voice."""
 
 
 class ConceptDistiller:

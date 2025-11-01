@@ -24,7 +24,7 @@ class ConceptPairValidatorPrompt:
     @staticmethod
     def get_system_prompt() -> str:
         """Get system prompt for pair validation."""
-        return """You are a senior insurance underwriter and product specialist with 20+ years of experience across life, health, property, and casualty insurance. Your task is to rigorously evaluate concept pairs and generate high-quality educational content. You must act as a **strict filter**, approving only pairs with a **direct, critical, and undeniable link** in insurance practice and customer advisory."""
+        return """You are an experienced insurance educator who helps people understand how insurance concepts connect in real life. You're a strict validator - only approve concept pairs that genuinely matter for customer decisions. Explain everything in plain language anyone can understand."""
 
     @staticmethod
     def get_user_prompt(concept_pairs: List[Tuple[str, str]], personality: str) -> str:
@@ -48,23 +48,40 @@ class ConceptPairValidatorPrompt:
         return f"""**CONCEPT PAIRS TO EVALUATE:**
 {pairs_text}
 
-**CUSTOMER PERSONA:** {personality}
+**CUSTOMER:** {personality}
 
-For each pair, you must strictly evaluate the following two criteria. **BOTH must be strongly true** to proceed.
+**VALIDATION (BOTH must be strongly true):**
 
-1.  **Direct Insurance Relevance**: Is there a **direct coverage, risk, underwriting, claims, or regulatory link** between the two concepts? The connection should not be a weak, coincidental, or indirect association. One concept must frequently and directly influence the consideration of the other in **critical insurance decisions**.
+1. **Do these concepts actually connect in insurance decisions?**
+   - Not just loosely related - one directly affects the other
+   - Matters for coverage, costs, eligibility, or claims
+   - Comes up frequently in real customer situations
 
-2.  **Essential Educational Value**: Does understanding this specific link teach a **crucial, non-obvious insurance reasoning skill**? The relationship should highlight a common customer confusion, a key coverage interaction, or a pivotal underwriting decision. It must be more than a simple factual association.
+2. **Does this connection teach something important?**
+   - Clarifies common confusion or reveals non-obvious interaction
+   - Helps make better insurance decisions
+   - More than just two separate facts
 
-**EXAMPLE OF A PAIR TO REJECT:**
-- `"Premium" <-> "Office Building"`: While premiums are paid at insurance offices, this is a basic locational fact and lacks educational depth.
+**REJECT EXAMPLE:**
+- `"Premium" <-> "Office Building"`: Basic location fact, no decision value.
 
-Acting as the customer persona above, for each pair that meets the stringent criteria:
-1. Generate 1 insurance scenario question covering BOTH concepts from this customer's perspective.
-2. Every detail mentioned must be CRITICAL to the insurance decision - avoid redundant details.
-3. Focus on decision-making situations where simultaneously considering the concept pairs is central.
-4. The question should reflect this persona's specific concerns, knowledge level, and situation.
-5. **AVOID simple definitional questions** - require insurance reasoning and application.
+**FOR VALID PAIRS - Generate 1 question as this customer:**
+
+**QUESTION TYPES (rotate through):**
+- **Explanation**: "How do [concept A] and [concept B] work together?"
+- **Eligibility**: "Can I get [concept A] if I have [concept B situation]?"
+- **Scenario**: "What happens with [concept A] and [concept B] if [real event]?"
+
+**REQUIREMENTS:**
+1. **Conversational tone** - write like texting a friend
+2. **No jargon** - everyday words only (avoid: exclusion, rider, endorsement → use: not covered, add-on, change)
+3. **Decision-focused** - real situations requiring both concepts
+4. **Relevant details only** - every fact must matter
+
+**KNOWLEDGE FACTS:**
+- Plain language explanations
+- Focus on how concepts interact in practice
+- What matters for this customer's decision
 
 **OUTPUT FORMAT (strict JSON):**
 {{
@@ -74,21 +91,21 @@ Acting as the customer persona above, for each pair that meets the stringent cri
       "is_insurancely_relevant": true/false,
       "is_instructionally_meaningful": true/false,
       "question": {{
-        "question": "Insurance scenario covering both concepts from this persona's perspective...",
-        "reasoning_guidance": "Step-by-step insurance thinking process...",
+        "question": "Conversational question covering both concepts...",
+        "reasoning_guidance": "How to think through this step-by-step in plain language...",
         "knowledge_facts": [
-          "{first_pair[0]} fact 1...",
-          "{first_pair[1]} fact 1...",
-          "{first_pair[0]} fact 2..."
+          "{first_pair[0]} plain-language fact showing connection...",
+          "{first_pair[1]} plain-language fact showing connection...",
+          "How they interact in real situations..."
         ],
-        "final_answer": "Comprehensive answer addressing the customer's concerns...",
-        "best_to_know": "Information about the customer/context/product that would help better answer this question"
+        "final_answer": "Clear, jargon-free answer...",
+        "best_to_know": "What context would help give a better answer"
       }}
     }}
   ]
 }}
 
-Generate the evaluation and content now from this customer's perspective."""
+Evaluate now from this customer's perspective."""
 
 
 class ConceptPairValidator:

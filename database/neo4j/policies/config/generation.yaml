@@ -9,8 +9,8 @@ concurrency:
   stage_3_fact_extraction: 100
   stage_4_concept_expansion: 100
   stage_5_personality_generation: 10
-  stage_7a_concept_distillation: 10
-  stage_7b_pair_validation: 10
+  stage_7a_concept_distillation: 1000
+  stage_7b_pair_validation: 1000
 
 # Batch sizes for API calls
 batch_sizes:
@@ -18,8 +18,8 @@ batch_sizes:
   concept_extraction: 1      # Process texts individually
   fact_extraction: 1         # Process facts individually
   personality_generation: 5  # Generate 5 personalities per API call
-  concept_distillation: 20   # Distill 20 concepts per batch
-  pair_validation: 20        # Validate 20 pairs per batch
+  concept_distillation: 2000   # Distill 2000 concepts per batch
+  pair_validation: 2000        # Validate 2000 pairs per batch
 
 # Batch delays (seconds between batches)
 batch_delays:

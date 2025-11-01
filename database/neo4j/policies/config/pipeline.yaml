@@ -16,7 +16,7 @@ pipeline:
   # Stage enablement flags
   stages:
     stage_0_ocr:
-      enabled: true
+      enabled: false
       description: "Convert PDFs to markdown using precise_ocr"
 
     stage_1_product_extraction:
@@ -44,8 +44,8 @@ pipeline:
     stage_4_concept_expansion:
       enabled: false
       description: "Iteratively expand concept graph"
-      iterations: 3  # Can be set to "auto" for convergence-based stopping
-      save_iterations: [1, 2, 3]  # Save snapshots at these iteration numbers
+      iterations: 2  # Can be set to "auto" for convergence-based stopping
+      save_iterations: [1, 2]  # Save snapshots at these iteration numbers
       input_files:
         seed_concepts: "stage_2_seed_concepts.json"
       output_files:
@@ -60,19 +60,19 @@ pipeline:
       enabled: false
       description: "Integrate facts into concept graphs"
       input_files:
-        main_graph: "concept_graph_4omini_3_iter.pkl"
+        main_graph: "concept_graph_4omini_1_iter.pkl"
         sub_graph: "concept_graph_4omini_1_iter.pkl"
         all_facts: "stage_3_all_facts.json"
         product_dict: "stage_1_product_dict.pkl"
       output_files:
-        main_graph_with_facts: "concept_graph_4omini_3_iter_with_products_and_facts.pkl"
+        main_graph_with_facts: "concept_graph_4omini_1_iter_with_products_and_facts.pkl"
         sub_graph_with_facts: "concept_graph_4omini_1_iter_with_products_and_facts.pkl"
 
     stage_7a_concept_distillation:
       enabled: false
       description: "Generate single-concept QA pairs"
       input_files:
-        concept_graph: "concept_graph_4omini_3_iter.pkl"
+        concept_graph: "concept_graph_4omini_1_iter.pkl"
         personalities: "stage_5_personalities.json"
       output_dir: "concept_distillation"
 
@@ -80,7 +80,7 @@ pipeline:
       enabled: false
       description: "Generate concept-pair QA pairs"
       input_files:
-        concept_graph: "concept_graph_4omini_3_iter.pkl"
+        concept_graph: "concept_graph_4omini_1_iter.pkl"
         personalities: "stage_5_personalities.json"
       output_dir: "pair_validation"
 
@@ -96,12 +96,11 @@ pipeline:
       enabled: false
       description: "Assemble knowledge graph JSON for Neo4j"
       input_files:
-        concept_graph: "concept_graph_4omini_3_iter.pkl"
         qa_collection: "stage_7c_qa_collection.json"
       output_file: "stage_8_knowledge_graph.json"
 
     stage_9_neo4j_import:
-      enabled: false
+      enabled: true
       input_files:
         concept_graph: "stage_8_knowledge_graph.json"
       description: "Import knowledge graph into Neo4j"
@@ -110,4 +109,4 @@ pipeline:
   convergence:
     concept_add_threshold: 0.01  # Stop if < 1% new concepts added
     connectivity_threshold: 0.01   # Stop if < 1% connectivity rate
-    max_iterations: 3           # Hard limit on iterations
+    max_iterations: 2           # Hard limit on iterations

@@ -34,9 +34,9 @@ class ProductExtractorPrompt:
 
 {sample_text}
 
-Return ONLY the exact product name with the brand name (e.g., "SingTel Elite Insurance Plan", "AXA SmartHealth Insurance").
+Return ONLY the exact product name with the brand name (e.g., "SingTel Elite Insurance", "AXA SmartHealth Insurance").
 
-The Product Name should not contain any special characters like '_', '-'. The Product Name should be capitalized appropriately.
+The Product Name should not contain any special characters like '_', '-'. The Product Name should be capitalized appropriately. The product name should avoid generic terms like "Plan", "Policy", etc., unless they are part of the official name.
 
 Product name:"""
 

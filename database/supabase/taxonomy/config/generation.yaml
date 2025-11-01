@@ -1,0 +1,73 @@
+# Generation Configuration
+# Parameters for concurrency, batch processing, and generation settings
+
+# Concurrency settings (max_workers for ThreadPoolExecutor)
+concurrency:
+  # Stage 2: Value extraction with LLMs (Extractor + Judger)
+  max_workers: 100
+  stage_2_condition_extraction: 100
+  stage_2_benefit_extraction: 100
+  stage_2_benefit_condition_extraction: 100
+
+  # Stage 4: Standardization with LLMs
+  stage_4_condition_standardization: 100
+  stage_4_benefit_standardization: 100
+  stage_4_benefit_condition_standardization: 100
+
+# Batch sizes for API calls
+batch_sizes:
+  # Stage 2: Process raw_text chunks
+  condition_extraction: 100       # Process 50 text chunks per batch
+  benefit_extraction: 100
+  benefit_condition_extraction: 100
+
+  # Stage 4: Standardization operates on aggregated data (smaller batches)
+  condition_standardization: 100
+  benefit_standardization: 100
+  benefit_condition_standardization: 100
+
+# Batch delays (seconds between batches to avoid rate limiting)
+batch_delays:
+  condition_extraction: 0
+  benefit_extraction: 0
+  benefit_condition_extraction: 0
+  condition_standardization: 0
+  benefit_standardization: 0
+  benefit_condition_standardization: 0
+
+# Stage 2: Value extraction configuration
+value_extraction:
+  # Extractor-Judger pillar: sequential processing
+  pillar_mode: true  # Judger runs immediately after Extractor on same text
+
+  # Validation strictness
+  json_validation:
+    strict_schema: true        # Enforce exact schema structure
+    required_fields: true      # All required fields must be present
+    type_checking: true        # Validate data types
+    repair_attempts: 3         # Max attempts to repair malformed JSON
+
+# Stage 4: Standardization configuration
+standardization:
+  parameter_normalization:
+    convert_to_numeric: true   # Convert numeric strings to numbers
+    unify_keys: true           # Standardize parameter key names
+    handle_missing: "none"     # Use None for missing values
+    preserve_original: false   # Don't keep original_text in standardized output
+
+# API retry configuration
+api:
+  retry:
+    total: 5                   # Max retry attempts
+    backoff_factor: 1.5        # Exponential backoff multiplier
+    status_forcelist: [408, 429, 500, 502, 503, 504]  # Retry on these HTTP codes
+  session:
+    pool_connections: 20       # Connection pool size
+    pool_maxsize: 100          # Maximum connections
+    timeout: 300               # Request timeout (seconds)
+
+# Progress tracking
+progress:
+  print_interval: 10           # Print progress every N items
+  save_batch_results: true     # Save intermediate batch results
+  log_errors: true             # Log all errors to file

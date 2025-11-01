@@ -27,7 +27,8 @@ class FactGraphIntegrator:
         """
         import torch
 
-        self.device = device if torch.cuda.is_available() else 'cpu'
+        self.device = device if torch.cuda.is_available() else 'mps'
+        
         print(f"Initialize model, use device: {self.device}")
 
         self.model = SentenceTransformer(

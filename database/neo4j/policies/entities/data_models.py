@@ -241,96 +241,135 @@ class PairValidationResult:
 
 @dataclass
 class GraphNode:
-    """Node in the knowledge graph."""
+    """Node in the knowledge graph following MemOS TextualMemoryItem format."""
     id: str
-    type: str  # "Concept" or "QA"
-    text: str
-    embedding: List[float]
-    metadata: Dict[str, Any]
+    memory: str  # The main content (concept name or QA text)
+    metadata: Dict[str, Any]  # Contains type, embedding, entities, tags, etc.
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "id": self.id,
-            "type": self.type,
-            "text": self.text,
-            "embedding": self.embedding,
+            "memory": self.memory,
             "metadata": self.metadata
         }
 
     @classmethod
     def create_concept_node(
         cls,
-        concept: str,
+        concept_name: str,
         embedding: List[float]
     ) -> 'GraphNode':
         """Create a concept node."""
         import uuid
         return cls(
             id=str(uuid.uuid4()),
-            type="Concept",
-            text=concept,
-            embedding=embedding,
+            memory=concept_name,  # Concept name as memory
             metadata={
-                "node_type": "Concept",
-                "created_at": datetime.now().isoformat()
+                "type": "fact",
+                "memory_type": "UserMemory",
+                "status": "activated",
+                "entities": [concept_name],
+                "tags": [concept_name],
+                "embedding": embedding,  # Embedding of the concept name
+                "created_at": datetime.now().isoformat(),
+                "usage": [],
+                "background": ""
             }
         )
 
     @classmethod
     def create_qa_node(
         cls,
-        qa_pair: QAPair,
-        embedding: List[float]
+        qa_data: Dict[str, Any],
+        embedding: List[float],
+        qa_type: str,
+        related_concept_ids: List[str]
     ) -> 'GraphNode':
-        """Create a QA node."""
+        """Create a QA node from qa_collection item."""
         import uuid
+
+        # Format memory content
+        memory_content = f"""Question: {qa_data['question']}
+
+Reasoning Guidance: {qa_data['reasoning_guidance']}
+
+Knowledge Facts: {'; '.join(qa_data['knowledge_facts'])}
+
+Answer: {qa_data['final_answer']}
+
+Best to Know: {qa_data.get('best_to_know', '')}"""
+
+        # Determine entities and tags based on concept type
+        if isinstance(qa_data['concept'], str):
+            entities = [qa_data['concept']]
+            tags = [qa_data['concept']]
+        elif isinstance(qa_data['concept'], list):
+            entities = qa_data['concept']
+            tags = qa_data['concept']
+        else:
+            entities = []
+            tags = []
+
         return cls(
             id=str(uuid.uuid4()),
-            type="QA",
-            text=qa_pair.question,
-            embedding=embedding,
+            memory=memory_content,
             metadata={
-                "node_type": "QA",
-                "reasoning_guidance": qa_pair.reasoning_guidance,
-                "knowledge_facts": qa_pair.knowledge_facts,
-                "final_answer": qa_pair.final_answer,
-                "best_to_know": qa_pair.best_to_know,
-                "created_at": datetime.now().isoformat()
+                "type": "fact",
+                "memory_type": "UserMemory",
+                "status": "activated",
+                "entities": entities,
+                "tags": tags,
+                "embedding": embedding,  # Embedding of the question
+                "created_at": datetime.now().isoformat(),
+                "usage": [],
+                "background": "",
+                # Store relationship info for edge creation
+                "qa_type": qa_type,
+                "related_concept_ids": related_concept_ids
             }
         )
 
 
 @dataclass
 class GraphEdge:
-    """Edge in the knowledge graph."""
-    source: str  # Node ID
-    target: str  # Node ID
-    relationship_type: str
-    created_at: str
+    """Edge in the knowledge graph following MemOS format."""
+    source: str  # Source node ID
+    target: str  # Target node ID
+    type: str  # Relationship type: "RELATE_TO" or "PARENT"
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "source": self.source,
             "target": self.target,
-            "type": self.relationship_type,
-            "created_at": self.created_at
+            "type": self.type
         }
 
     @classmethod
-    def create_edge(
+    def create_relate_to_edge(
         cls,
         source_id: str,
-        target_id: str,
-        relationship_type: str = "RELATED_TO"
+        target_id: str
     ) -> 'GraphEdge':
-        """Create an edge."""
+        """Create a RELATE_TO edge between concepts."""
         return cls(
             source=source_id,
             target=target_id,
-            relationship_type=relationship_type,
-            created_at=datetime.now().isoformat()
+            type="RELATE_TO"
+        )
+
+    @classmethod
+    def create_parent_edge(
+        cls,
+        parent_id: str,
+        child_id: str
+    ) -> 'GraphEdge':
+        """Create a PARENT edge from concept to QA."""
+        return cls(
+            source=parent_id,
+            target=child_id,
+            type="PARENT"
         )
 
 
@@ -348,18 +387,33 @@ class KnowledgeGraph:
         }
 
     def get_concept_nodes(self) -> List[GraphNode]:
-        """Get all concept nodes."""
-        return [node for node in self.nodes if node.type == "Concept"]
+        """Get all concept nodes (nodes without qa_type in metadata)."""
+        return [node for node in self.nodes if "qa_type" not in node.metadata]
 
     def get_qa_nodes(self) -> List[GraphNode]:
-        """Get all QA nodes."""
-        return [node for node in self.nodes if node.type == "QA"]
+        """Get all QA nodes (nodes with qa_type in metadata)."""
+        return [node for node in self.nodes if "qa_type" in node.metadata]
 
     def get_stats(self) -> Dict[str, int]:
         """Get graph statistics."""
+        concept_nodes = self.get_concept_nodes()
+        qa_nodes = self.get_qa_nodes()
+
+        # Count QA types
+        concept_qa_count = sum(1 for node in qa_nodes if node.metadata.get("qa_type") == "concept_qa")
+        relation_qa_count = sum(1 for node in qa_nodes if node.metadata.get("qa_type") == "relation_qa")
+
+        # Count edge types
+        relate_to_edges = sum(1 for edge in self.edges if edge.type == "RELATE_TO")
+        parent_edges = sum(1 for edge in self.edges if edge.type == "PARENT")
+
         return {
             "total_nodes": len(self.nodes),
-            "concept_nodes": len(self.get_concept_nodes()),
-            "qa_nodes": len(self.get_qa_nodes()),
-            "total_edges": len(self.edges)
+            "concept_nodes": len(concept_nodes),
+            "qa_nodes": len(qa_nodes),
+            "concept_qa_nodes": concept_qa_count,
+            "relation_qa_nodes": relation_qa_count,
+            "total_edges": len(self.edges),
+            "relate_to_edges": relate_to_edges,
+            "parent_edges": parent_edges
         }

@@ -98,6 +98,76 @@ def load_pickle(file_path: Union[str, Path]) -> Any:
         return pickle.load(f)
 
 
+def load_pickle_directory(
+    directory: Union[str, Path],
+    pattern: str = "*.pkl"
+) -> Dict[str, Any]:
+    """
+    Load all pickle files from a directory and aggregate their results.
+
+    Expects pickle files with structure: {metadata: {...}, results: {...}}
+    where 'results' is a dictionary with IDs as keys.
+    Merges all 'results' dicts from each batch file into a single aggregated dict.
+
+    Args:
+        directory: Directory path containing pickle batch files
+        pattern: Glob pattern for matching files (default: *.pkl)
+
+    Returns:
+        Aggregated dictionary of all results: {id: result_dict}
+        Returns empty dict if no files found or directory doesn't exist.
+
+    Example:
+        >>> # Load concept distillation batch files
+        >>> results = load_pickle_directory("output/concept_distillation")
+        >>> print(f"Loaded {len(results)} concepts")
+    """
+    directory = Path(directory)
+    aggregated_results = {}
+
+    # Check if directory exists
+    if not directory.exists():
+        print(f"Warning: Directory not found: {directory}")
+        return aggregated_results
+
+    # Find all pickle files matching pattern
+    pkl_files = sorted(directory.glob(pattern))
+
+    if not pkl_files:
+        print(f"Warning: No pickle files found in {directory}")
+        return aggregated_results
+
+    print(f"Loading {len(pkl_files)} pickle batch files from {directory}")
+
+    for pkl_file in pkl_files:
+        try:
+            batch_data = load_pickle(pkl_file)
+
+            # Handle both dict structure (with 'results' key) and direct results
+            if isinstance(batch_data, dict) and 'results' in batch_data:
+                batch_results = batch_data['results']
+            elif isinstance(batch_data, dict):
+                # Assume the entire dict is the results
+                batch_results = batch_data
+            else:
+                print(f"Warning: Unexpected structure in {pkl_file.name} - skipping")
+                continue
+
+            # Merge into aggregated dict (keys should be unique across batches)
+            if not isinstance(batch_results, dict):
+                print(f"Warning: Results in {pkl_file.name} are not a dict - skipping")
+                continue
+
+            aggregated_results.update(batch_results)
+
+        except Exception as e:
+            print(f"Error loading {pkl_file.name}: {e}")
+            continue
+
+    print(f"Successfully loaded {len(aggregated_results)} total results from {len(pkl_files)} batch files")
+    return aggregated_results
+
+
 def save_pickle(data: Any, file_path: Union[str, Path]):
     """
     Save data to a pickle file.

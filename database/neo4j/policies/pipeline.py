@@ -376,7 +376,7 @@ class KnowledgeGraphPipeline:
         )
 
         # Run iterations
-        api_client = self.config.get_api_client('concept_expansion')
+        api_client = self.config.get_api_client('concept_expander')
         max_workers = self.config.generation_config['concurrency']['stage_4_concept_expansion']
         convergence_config = self.config.pipeline_config['pipeline']['convergence']
 
@@ -425,12 +425,12 @@ class KnowledgeGraphPipeline:
         print("STAGE 5: PERSONALITY GENERATION")
         print("=" * 80)
 
-        api_client = self.config.get_api_client('personality_generation')
+        api_client = self.config.get_api_client('personality_generator')
         personality_config = self.config.generation_config['personality']
 
         generator = PersonalityGenerator(api_client)
         personalities = generator.generate_personalities(
-            personality_number=personality_config['total_personalities'],
+            personality_number=personality_config['total_count'],
             batch_size=self.config.generation_config['batch_sizes']['personality_generation'],
             max_workers=self.config.generation_config['concurrency']['stage_5_personality_generation']
         )
@@ -579,7 +579,7 @@ class KnowledgeGraphPipeline:
             print("Falling back to stage 5 results in memory")
             personalities = self.stage_results.get('stage_5', {}).get('personalities', [])
 
-        api_client = self.config.get_api_client('concept_distillation')
+        api_client = self.config.get_api_client('qa_synthesizer')
         distiller = ConceptDistiller(api_client, personalities)
         batch_distiller = BatchConceptDistiller(
             distiller,
@@ -630,7 +630,7 @@ class KnowledgeGraphPipeline:
             print("Falling back to stage 5 results in memory")
             personalities = self.stage_results.get('stage_5', {}).get('personalities', [])
 
-        api_client = self.config.get_api_client('pair_validation')
+        api_client = self.config.get_api_client('qa_synthesizer')
         validator = ConceptPairValidator(api_client, personalities)
         batch_validator = BatchConceptPairValidator(
             validator,
@@ -665,17 +665,33 @@ class KnowledgeGraphPipeline:
         concept_distillation_dir = self.output_base_dir / input_files.get('concept_distillation', 'concept_distillation')
         pair_validation_dir = self.output_base_dir / input_files.get('pair_validation', 'pair_validation')
 
-        # For now, fall back to memory (directories contain multiple files that need proper loading)
-        # This is a simplified implementation - proper directory loading would require the converter
-        # to handle directory input directly
+        # Load from directories if they exist (preferred method)
         if concept_distillation_dir.exists() and pair_validation_dir.exists():
-            print(f"Note: Directory-based loading not fully implemented")
-            print(f"Concept distillation dir: {concept_distillation_dir}")
-            print(f"Pair validation dir: {pair_validation_dir}")
-            print("Falling back to stage 7a/7b results in memory")
+            print(f"\nLoading from batch pickle files...")
+            print(f"Concept distillation directory: {concept_distillation_dir}")
+            print(f"Pair validation directory: {pair_validation_dir}")
 
-        distillation_results = self.stage_results.get('stage_7a', {}).get('distillation_results', {})
-        validation_results = self.stage_results.get('stage_7b', {}).get('validation_results', {})
+            # Import the load_pickle_directory function
+            from database.neo4j.policies.utils.file_utils import load_pickle_directory
+
+            # Load and aggregate all batch pickle files
+            distillation_results = load_pickle_directory(concept_distillation_dir)
+            validation_results = load_pickle_directory(pair_validation_dir)
+
+            print(f"\nAggregation complete:")
+            print(f"  Loaded {len(distillation_results)} concept distillation results")
+            print(f"  Loaded {len(validation_results)} pair validation results")
+        else:
+            # Fall back to memory results (only if directories don't exist)
+            print(f"\nDirectories not found, falling back to stage 7a/7b in-memory results")
+            print(f"  Concept distillation dir exists: {concept_distillation_dir.exists()}")
+            print(f"  Pair validation dir exists: {pair_validation_dir.exists()}")
+
+            distillation_results = self.stage_results.get('stage_7a', {}).get('distillation_results', {})
+            validation_results = self.stage_results.get('stage_7b', {}).get('validation_results', {})
+
+            print(f"  Loaded {len(distillation_results)} distillation results from memory")
+            print(f"  Loaded {len(validation_results)} validation results from memory")
 
         converter = QACollectionConverter(verbose=True)
 
@@ -711,97 +727,304 @@ class KnowledgeGraphPipeline:
         stage_8_config = self.config.pipeline_config['pipeline']['stages']['stage_8_memos_assembly']
         input_files = stage_8_config.get('input_files', {})
 
-        # Load concept_graph from file or memory
-        concept_graph_file = self.output_base_dir / input_files.get('concept_graph', 'concept_graph_4omini_3_iter.pkl')
-        if concept_graph_file.exists():
-            print(f"Loading concept graph from: {concept_graph_file}")
-            concept_graph = load_pickle(concept_graph_file)
-        else:
-            print(f"Concept graph file not found: {concept_graph_file}")
-            print("Falling back to stage 4 results in memory")
-            concept_graph = self.stage_results.get('stage_4', {}).get('concept_graph', {})
-
         # Load qa_collection from file or memory
         qa_collection_file = self.output_base_dir / input_files.get('qa_collection', 'stage_7c_qa_collection.json')
         if qa_collection_file.exists():
             print(f"Loading QA collection from: {qa_collection_file}")
-            qa_collection = load_json(qa_collection_file)
+            qa_data = load_json(qa_collection_file)
+            # Extract qa_collection list from the JSON structure
+            if isinstance(qa_data, dict) and 'qa_collection' in qa_data:
+                qa_collection = qa_data['qa_collection']
+                print(f"  Loaded {len(qa_collection)} QA items from collection")
+            else:
+                qa_collection = qa_data  # Fallback for different structure
         else:
             print(f"QA collection file not found: {qa_collection_file}")
             print("Falling back to stage 7c results in memory")
             qa_collection = self.stage_results.get('stage_7c', {}).get('qa_collection', [])
 
-        # Load embedding model
+        # ========================================================================
+        # Step 1: Extract unique concepts and validate data
+        # ========================================================================
+        print("\n" + "-" * 80)
+        print("STEP 1: EXTRACTING UNIQUE CONCEPTS")
+        print("-" * 80)
+
+        unique_concepts = set()
+        invalid_data = []
+        valid_concept_qa = 0
+        valid_relation_qa = 0
+
+        for i, qa_data in enumerate(qa_collection):
+            if isinstance(qa_data['concept'], str):
+                # Concept QA - single concept
+                unique_concepts.add(qa_data['concept'])
+                valid_concept_qa += 1
+            elif isinstance(qa_data['concept'], list):
+                # Relation QA - should be a pair of 2 concepts
+                if len(qa_data['concept']) == 2:
+                    unique_concepts.update(qa_data['concept'])
+                    valid_relation_qa += 1
+                else:
+                    # Data anomaly: not a pair of 2 concepts
+                    invalid_data.append({
+                        'index': i,
+                        'concept': qa_data['concept'],
+                        'length': len(qa_data['concept'])
+                    })
+            else:
+                # Data anomaly: concept is neither str nor list
+                invalid_data.append({
+                    'index': i,
+                    'concept': qa_data['concept'],
+                    'type': type(qa_data['concept']).__name__
+                })
+
+        print(f"Data Validation Results:")
+        print(f"  - Valid Concept QA: {valid_concept_qa}")
+        print(f"  - Valid Relation QA: {valid_relation_qa}")
+        print(f"  - Anomalous Data: {len(invalid_data)}")
+        print(f"  - Extracted unique concepts: {len(unique_concepts)}")
+
+        unique_concepts_list = list(unique_concepts)
+
+        # ========================================================================
+        # Step 2: Load embedding model
+        # ========================================================================
+        print("\n" + "-" * 80)
+        print("STEP 2: LOADING EMBEDDING MODEL")
+        print("-" * 80)
+
         embedding_config = self.config.models_config['models']['embedding']
         embedding_model = load_embedding_model(
             embedding_config['name'],
-            embedding_config.get('device', 'cpu')
+            embedding_config.get('device', 'mps')
+        )
+        print(f"Loaded embedding model: {embedding_config['name']}")
+
+        # ========================================================================
+        # Step 3: Create concept nodes with embeddings
+        # ========================================================================
+        print("\n" + "-" * 80)
+        print("STEP 3: CREATING CONCEPT NODES")
+        print("-" * 80)
+
+        print(f"Generating embeddings for {len(unique_concepts_list)} concepts...")
+        concept_embeddings = generate_embeddings_batch(
+            unique_concepts_list,
+            embedding_model,
+            batch_size=100
         )
 
-        nodes = []
-        edges = []
+        concept_nodes = {}  # Map concept name -> node info
+        for concept, embedding in zip(unique_concepts_list, concept_embeddings):
+            node = GraphNode.create_concept_node(concept, embedding)
+            concept_nodes[concept] = {
+                "id": node.id,
+                "node": node
+            }
 
-        # Create concept nodes
-        print("Creating concept nodes...")
-        all_concepts = list(concept_graph.keys())
-        concept_embeddings = generate_embeddings_batch(embedding_model, all_concepts)
+        print(f"Created {len(concept_nodes)} concept nodes")
 
-        concept_id_map = {}
-        for concept, embedding in zip(all_concepts, concept_embeddings):
-            node = GraphNode.create_concept_node(concept, embedding.tolist())
-            nodes.append(node)
-            concept_id_map[concept] = node.id
+        # ========================================================================
+        # Step 4: Create QA nodes with embeddings
+        # ========================================================================
+        print("\n" + "-" * 80)
+        print("STEP 4: CREATING QA NODES")
+        print("-" * 80)
 
-        # Create concept edges
-        print("Creating concept edges...")
-        for concept, neighbors in concept_graph.items():
-            source_id = concept_id_map[concept]
-            for neighbor in neighbors:
-                if neighbor in concept_id_map:
-                    edge = GraphEdge.create_edge(source_id, concept_id_map[neighbor], "RELATED_TO")
-                    edges.append(edge)
+        # Collect all questions for batch embedding
+        all_questions = []
+        all_metadata = []
+        skipped_count = 0
+
+        for qa_data in qa_collection:
+            question = qa_data['question']
+
+            # Determine QA type and prepare metadata
+            if isinstance(qa_data['concept'], str):
+                # Concept QA
+                concept_name = qa_data['concept']
+                if concept_name not in concept_nodes:
+                    print(f"  Warning: Concept '{concept_name}' does not exist, skipping this QA")
+                    skipped_count += 1
+                    continue
+
+                qa_type = "concept_qa"
+                related_concept_ids = [concept_nodes[concept_name]["id"]]
+
+            elif isinstance(qa_data['concept'], list) and len(qa_data['concept']) == 2:
+                # Relation QA
+                concept_names = qa_data['concept']
+
+                # Check if all concepts exist
+                missing_concepts = [name for name in concept_names if name not in concept_nodes]
+                if missing_concepts:
+                    print(f"  Warning: Concepts {missing_concepts} do not exist, skipping this QA")
+                    skipped_count += 1
+                    continue
+
+                qa_type = "relation_qa"
+                related_concept_ids = [concept_nodes[name]["id"] for name in concept_names]
+
+            else:
+                # Skip anomalous data
+                skipped_count += 1
+                continue
+
+            all_questions.append(question)
+            all_metadata.append({
+                'qa_data': qa_data,
+                'qa_type': qa_type,
+                'related_concept_ids': related_concept_ids
+            })
+
+        print(f"Collected {len(all_questions)} valid questions (skipped {skipped_count})")
+        print(f"Generating embeddings for questions...")
+
+        # Batch generate embeddings for all questions
+        question_embeddings = generate_embeddings_batch(
+            all_questions,
+            embedding_model,
+            batch_size=100
+        )
 
         # Create QA nodes
-        print("Creating QA nodes...")
-        qa_questions = [qa['question'] for qa in qa_collection]
-        qa_embeddings = generate_embeddings_batch(embedding_model, qa_questions)
+        qa_nodes = []
+        concept_qa_count = 0
+        relation_qa_count = 0
 
-        qa_id_map = {}
-        for qa, embedding in zip(qa_collection, qa_embeddings):
-            qa_pair = QAPair(
-                question_id=0,
-                question=qa['question'],
-                reasoning_guidance=qa['reasoning_guidance'],
-                knowledge_facts=qa['knowledge_facts'],
-                final_answer=qa['final_answer'],
-                best_to_know=qa['best_to_know']
+        for metadata, embedding in zip(all_metadata, question_embeddings):
+            node = GraphNode.create_qa_node(
+                qa_data=metadata['qa_data'],
+                embedding=embedding,
+                qa_type=metadata['qa_type'],
+                related_concept_ids=metadata['related_concept_ids']
             )
-            node = GraphNode.create_qa_node(qa_pair, embedding.tolist())
-            nodes.append(node)
-            qa_id_map[qa['question']] = node.id
+            qa_nodes.append(node)
 
-            # Link QA to concepts
-            concepts = qa['concept'] if isinstance(qa['concept'], list) else [qa['concept']]
-            for concept in concepts:
-                if concept in concept_id_map:
-                    edge = GraphEdge.create_edge(node.id, concept_id_map[concept], "ADDRESSES")
+            if metadata['qa_type'] == "concept_qa":
+                concept_qa_count += 1
+            else:
+                relation_qa_count += 1
+
+        print(f"Created {len(qa_nodes)} QA nodes")
+        print(f"  - Concept QA: {concept_qa_count}")
+        print(f"  - Relation QA: {relation_qa_count}")
+
+        # ========================================================================
+        # Step 5: Create relationship edges
+        # ========================================================================
+        print("\n" + "-" * 80)
+        print("STEP 5: CREATING RELATIONSHIP EDGES")
+        print("-" * 80)
+
+        edges = []
+        edge_set = set()  # For deduplicating edges
+
+        # 5.1: Concept↔Concept RELATE_TO relationships (derived from Relation QA)
+        print("Creating inter-concept RELATE_TO relationships...")
+        concept_relations = set()
+        for qa_data in qa_collection:
+            if isinstance(qa_data['concept'], list) and len(qa_data['concept']) == 2:
+                concept_A, concept_B = qa_data['concept']
+                if concept_A in concept_nodes and concept_B in concept_nodes:
+                    relation_key = tuple(sorted([concept_A, concept_B]))
+                    concept_relations.add(relation_key)
+
+        relate_count = 0
+        for concept_A, concept_B in concept_relations:
+            concept_A_id = concept_nodes[concept_A]["id"]
+            concept_B_id = concept_nodes[concept_B]["id"]
+
+            edge_key = tuple(sorted([concept_A_id, concept_B_id]))
+            if edge_key not in edge_set:
+                edge = GraphEdge.create_relate_to_edge(concept_A_id, concept_B_id)
+                edges.append(edge)
+                edge_set.add(edge_key)
+                relate_count += 1
+
+        print(f"  Created {relate_count} inter-concept RELATE_TO relationships")
+
+        # 5.2: Concept→QA PARENT relationships (Concept QA)
+        print("Creating Concept→QA PARENT relationships...")
+        parent_count = 0
+        for qa_node in qa_nodes:
+            if qa_node.metadata['qa_type'] == "concept_qa":
+                concept_id = qa_node.metadata['related_concept_ids'][0]
+                edge = GraphEdge.create_parent_edge(concept_id, qa_node.id)
+                edges.append(edge)
+                parent_count += 1
+
+        print(f"  Created {parent_count} Concept→QA PARENT relationships")
+
+        # 5.3: Concept→QA PARENT relationships (Relation QA - bridging questions)
+        print("Creating Concept→Bridging QA PARENT relationships...")
+        relation_parent_count = 0
+        for qa_node in qa_nodes:
+            if qa_node.metadata['qa_type'] == "relation_qa":
+                for concept_id in qa_node.metadata['related_concept_ids']:
+                    edge = GraphEdge.create_parent_edge(concept_id, qa_node.id)
                     edges.append(edge)
+                    relation_parent_count += 1
+
+        print(f"  Created {relation_parent_count} Concept→Bridging QA PARENT relationships")
+        print(f"Total relationships: {len(edges)}")
+
+        # ========================================================================
+        # Step 6: Assemble final knowledge graph
+        # ========================================================================
+        print("\n" + "-" * 80)
+        print("STEP 6: ASSEMBLING KNOWLEDGE GRAPH")
+        print("-" * 80)
+
+        # Collect all nodes
+        all_nodes = []
+
+        # Add concept nodes
+        for concept_data in concept_nodes.values():
+            all_nodes.append(concept_data["node"])
+
+        # Add QA nodes (clean up temporary fields in metadata)
+        for qa_node in qa_nodes:
+            # Create a clean copy without temporary fields
+            clean_metadata = qa_node.metadata.copy()
+            if "qa_type" in clean_metadata:
+                del clean_metadata["qa_type"]
+            if "related_concept_ids" in clean_metadata:
+                del clean_metadata["related_concept_ids"]
+
+            # Create clean node
+            clean_node = GraphNode(
+                id=qa_node.id,
+                memory=qa_node.memory,
+                metadata=clean_metadata
+            )
+            all_nodes.append(clean_node)
 
         # Create knowledge graph
-        knowledge_graph = KnowledgeGraph(nodes=nodes, edges=edges)
+        knowledge_graph = KnowledgeGraph(nodes=all_nodes, edges=edges)
 
         # Save to JSON
         output_file = self.output_base_dir / "stage_8_knowledge_graph.json"
         graph_dict = knowledge_graph.to_dict()
         save_json(graph_dict, output_file)
 
+        stats = knowledge_graph.get_stats()
+
         self.stage_results['stage_8'] = {
             'knowledge_graph': graph_dict,
             'output_file': str(output_file),
-            'stats': knowledge_graph.get_stats()
+            'stats': stats
         }
 
-        print(f"Generated knowledge graph: {knowledge_graph.get_stats()}")
+        print("\n" + "=" * 80)
+        print("STAGE 8 COMPLETE")
+        print("=" * 80)
+        print(f"Final Knowledge Graph Statistics:")
+        for key, value in stats.items():
+            print(f"  - {key}: {value}")
+        print(f"\nSaved to: {output_file}")
 
     def run_stage_9_neo4j_import(self):
         """Stage 9: Import knowledge graph into Neo4j."""

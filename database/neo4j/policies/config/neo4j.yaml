@@ -2,17 +2,17 @@
 # Database connection and import settings
 
 connection:
-  uri: "bolt://localhost:7687"
+  uri: "neo4j+s://5d506c04.databases.neo4j.io"
   username: "neo4j"
-  password: "12345678"  # Override with environment variable NEO4J_PASSWORD
-  database: "insurance"
+  password: "71b34NheEPrH9YPJO2x6fhkPYR0xKCBt8x1V2-rGq6M"  # Override with environment variable NEO4J_PASSWORD
+  database: "neo4j"
 
 import:
   # Batch sizes for bulk operations
   batch_sizes:
-    nodes: 1000          # Node batch size
-    edges: 1000          # Edge batch size
-    constraints: 100     # Constraint batch size
+    nodes: 10000         # Node batch size
+    edges: 10000          # Edge batch size
+    constraints: 10000     # Constraint batch size
 
   # Performance tuning
   performance:
