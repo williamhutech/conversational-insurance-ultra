@@ -20,7 +20,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 from backend.database.dynamodb_client import DynamoDBClient
-from backend.database.postgres_client import SupabaseClient
+from backend.database.supabase_client import SupabaseClient
 from backend.services.stripe_integration import StripeService
 from backend.services.ancileo_client import AncileoClient
 from backend.models.payment import (

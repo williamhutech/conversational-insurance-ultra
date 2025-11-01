@@ -1355,7 +1355,7 @@ async def get_original_text_data(query: str, top_k: int = 10) -> str:
 
     try:
         # Import here to avoid circular dependencies
-        from backend.database.postgres_client import get_supabase
+        from backend.database.supabase_client import get_supabase
 
         # Get Supabase client and search
         supabase_client = await get_supabase()

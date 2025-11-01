@@ -14,7 +14,7 @@ from openai import AsyncOpenAI
 # Load environment variables from .env
 load_dotenv()
 
-from backend.database.postgres_client import get_supabase
+from backend.database.supabase_client import get_supabase
 
 logger = logging.getLogger(__name__)
 

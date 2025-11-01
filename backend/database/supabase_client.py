@@ -669,7 +669,7 @@ from typing import Any, Dict, List, Optional
 
 # Adjust this import to your project layout if needed
 try:
-    from backend.database.postgres_client import SupabaseClient, get_supabase
+    from backend.database.supabase_client import SupabaseClient, get_supabase
 except ModuleNotFoundError as e:
     print("Import error: make sure this file is inside your project and PYTHONPATH is set.")
     print(e)

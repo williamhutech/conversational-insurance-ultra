@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel, Field
 
 from backend.services.ancileo_client import AncileoClient
-from backend.database.postgres_client import SupabaseClient, get_supabase
+from backend.database.supabase_client import SupabaseClient, get_supabase
 
 logger = logging.getLogger(__name__)
 
