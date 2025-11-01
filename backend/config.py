@@ -65,9 +65,9 @@ class Settings(BaseSettings):
     # -----------------------------------------------------------------------------
     # Database: Neo4j (Graph Database)
     # -----------------------------------------------------------------------------
-    neo4j_policy_uri: str = Field(..., description="Neo4j connection URI")
+    neo4j_policy_uri: str | None = Field(None, description="Neo4j connection URI")
     neo4j_policy_username: str = "neo4j"
-    neo4j_policy_password: str = Field(..., description="Neo4j password")
+    neo4j_policy_password: str | None = Field(None, description="Neo4j password")
     neo4j_policy_database: str = "neo4j"
 
     # -----------------------------------------------------------------------------
@@ -148,6 +148,12 @@ class Settings(BaseSettings):
     # -----------------------------------------------------------------------------
     sentry_dsn: str | None = None
     redis_url: str | None = "redis://localhost:6379/0"
+    
+    # -----------------------------------------------------------------------------
+    # Ancileo Travel Insurance API
+    # -----------------------------------------------------------------------------
+    insurance_api_key: str = Field(..., description="Ancileo/Insurance API key", alias="INSURANCE_API_KEY")
+    insurance_api_base_url: str = Field(..., description="Ancileo/Insurance API base URL", alias="INSURANCE_API_BASE_URL")
 
     # -----------------------------------------------------------------------------
     # Development & Testing

@@ -16,6 +16,7 @@ import logging
 
 from backend.config import settings
 from backend.routers import purchase_router
+from backend.routers.quotation import router as quotation_router
 from backend.routers.memory import router as memory_router
 from backend.routers.widgets import router as widgets_router
 from backend.routers.concept_search import router as concept_search_router
@@ -129,6 +130,12 @@ async def health_check():
 # Block 4: Purchase Execution
 app.include_router(
     purchase_router,
+    prefix="/api"
+)
+
+# Block 3: Quotation Generation
+app.include_router(
+    quotation_router,
     prefix="/api"
 )
 

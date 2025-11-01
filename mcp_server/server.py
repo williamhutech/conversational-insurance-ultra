@@ -25,10 +25,13 @@ Or configure in Claude Desktop / ChatGPT:
 
 import logging
 import os
+import base64
+import binascii
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from typing import Any, Dict, List
 from fastmcp import FastMCP
+from libs.ocr.fast_ocr import fast_text_extract
 
 from mcp_server.client.backend_client import BackendClient
 
@@ -209,6 +212,64 @@ async def answer_question(
 # BLOCK 3: Document Intelligence & Auto-Quotation
 # =============================================================================
 
+
+@mcp.tool()
+async def parse_uploaded_file(
+    file_path: str | None = None,
+    file_bytes_base64: str | None = None,
+    lang: str = "auto",
+    enable_text_cleanup: bool = True,
+    use_angle_cls: bool = True
+) -> Dict[str, Any]:
+    """Extract text and metadata from an uploaded document using Fast OCR."""
+    if not file_path and not file_bytes_base64:
+        message = "Either file_path or file_bytes_base64 must be provided."
+        logger.error(message)
+        return {"error": message}
+
+    if file_bytes_base64:
+        try:
+            file_input = base64.b64decode(file_bytes_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            error_message = f"Invalid base64 payload: {exc}"
+            logger.error(error_message)
+            return {"error": error_message}
+    else:
+        if file_path is None:
+            message = "file_path must be provided when file_bytes_base64 is absent."
+            logger.error(message)
+            return {"error": message}
+        file_input = file_path
+
+    try:
+        result = fast_text_extract(
+            file=file_input,
+            lang=lang,
+            enable_text_cleanup=enable_text_cleanup,
+            use_angle_cls=use_angle_cls
+        )
+    except Exception as exc:
+        error_message = f"OCR extraction failed: {exc}"
+        logger.exception(error_message)
+        return {"error": error_message}
+
+    metadata = result.get('metadata', {}) or {}
+
+    return {
+        "text": result.get('text', ''),
+        "file_info": {
+            "name": result.get('file_name'),
+            "type": result.get('file_type'),
+            "language": result.get('language'),
+            "pages": result.get('page_count'),
+            "size_mb": result.get('file_size_mb'),
+            "confidence": result.get('confidence'),
+        },
+        "metadata": metadata,
+    }
+
+
+
 @mcp.tool()
 async def upload_document(
     customer_id: str,
@@ -256,27 +317,93 @@ async def extract_travel_data(document_ids: List[str]) -> Dict[str, Any]:
 @mcp.tool()
 async def generate_quotation(
     customer_id: str,
-    travel_plan_id: str | None = None,
-    manual_travel_data: Dict[str, Any] | None = None
+    trip_type: str,  # "RT" or "ST"
+    departure_date: str,  # YYYY-MM-DD
+    return_date: str | None = None,  # YYYY-MM-DD (required for RT)
+    departure_country: str = "SG",
+    arrival_country: str = "CN",
+    adults_count: int = 1,
+    children_count: int = 0,
+    market: str = "SG",
+    language_code: str = "en",
+    channel: str = "white-label"
 ) -> Dict[str, Any]:
     """
-    Generate personalized insurance quotations.
+    Generate personalized insurance quotations via Ancileo API.
 
     Args:
         customer_id: Customer ID
-        travel_plan_id: ID of extracted travel plan (from documents)
-        manual_travel_data: Manual travel data if not using extracted plan
+        trip_type: "RT" (Round Trip) or "ST" (Single Trip)
+        departure_date: Departure date in YYYY-MM-DD format
+        return_date: Return date in YYYY-MM-DD format (required for RT, optional for ST)
+        departure_country: ISO country code (default: "SG")
+        arrival_country: ISO country code (default: "CN")
+        adults_count: Number of adults (default: 1)
+        children_count: Number of children (default: 0)
+        market: Market code (default: "SG")
+        language_code: Language preference (default: "en")
+        channel: Distribution channel (default: "white-label")
 
     Returns:
-        List of quotations with recommendations
+        Dictionary with:
+        - quotation_id: Quotation ID (this is the Ancileo quote ID directly)
+        - offers: List of available offers with pricing
+        - trip_summary: Travel details
+        - created_at: Creation timestamp
 
-    TODO: Implement quotation generation
-    TODO: Calculate premiums based on travel data
-    TODO: Apply data-driven recommendations
-    TODO: Return multiple policy options
+    Error Handling:
+        Returns error dict with user-friendly message if API call fails
     """
-    logger.info(f"Generating quotation for customer {customer_id}")
-    return {"error": "Not implemented"}
+    logger.info(f"Generating quotation for customer {customer_id}: {trip_type} {departure_date}")
+    
+    try:
+        # Call backend API to generate quotation
+        result = await backend_client.generate_quotation(
+            customer_id=customer_id,
+            trip_type=trip_type,
+            departure_date=departure_date,
+            return_date=return_date,
+            departure_country=departure_country,
+            arrival_country=arrival_country,
+            adults_count=adults_count,
+            children_count=children_count,
+            market=market,
+            language_code=language_code,
+            channel=channel
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error generating quotation: {e}", exc_info=True)
+        error_message = str(e)
+        
+        # Check if it's an HTTP error with status code
+        if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+            if e.response.status_code == 400:
+                return {
+                    "error": {
+                        "error_code": "validation_error",
+                        "message": error_message,
+                        "user_message": f"I need more information to generate a quotation: {error_message}"
+                    }
+                }
+            elif e.response.status_code == 404:
+                return {
+                    "error": {
+                        "error_code": "not_found",
+                        "message": error_message,
+                        "user_message": "The requested resource was not found. Please try again."
+                    }
+                }
+        
+        return {
+            "error": {
+                "error_code": "quotation_generation_failed",
+                "message": error_message,
+                "user_message": "I encountered an issue generating the quotation. Please try again or contact support."
+            }
+        }
 
 
 # =============================================================================
@@ -287,10 +414,13 @@ async def generate_quotation(
 async def initiate_purchase(
     user_id: str,
     quote_id: str,
+    selected_offer_id: str,
     amount: int,
     currency: str,
     product_name: str,
-    customer_email: str | None = None
+    customer_email: str | None = None,
+    insureds: Dict[str, Any] | None = None,
+    main_contact: Dict[str, Any] | None = None
 ) -> Dict[str, Any]:
     """
     Initiate purchase process for an insurance policy.
@@ -301,10 +431,13 @@ async def initiate_purchase(
     Args:
         user_id: User/customer identifier
         quote_id: Quote identifier for the policy being purchased
+        selected_offer_id: Selected offer ID from quotation (Ancileo offer.id)
         amount: Amount in cents (e.g., 15000 for $150.00 or SGD 150.00)
         currency: Currency code (e.g., "SGD", "USD")
         product_name: Product description (e.g., "Premium Travel Insurance - 7 Days Asia")
         customer_email: Optional customer email for pre-filling checkout form
+        insureds: Optional insured persons info (JSONB). If not provided, can be added later before purchase
+        main_contact: Optional main contact info (JSONB). If not provided, can be added later before purchase
 
     Returns:
         Dictionary with:
@@ -356,9 +489,10 @@ async def initiate_purchase(
         - Use check_payment_status() to poll payment status if needed
         - Always check for "error" key in response before proceeding
     """
-    logger.info(f"Initiating purchase for user {user_id}, quote {quote_id}")
+    logger.info(f"Initiating purchase for user {user_id}, quote {quote_id}, offer {selected_offer_id}")
 
     try:
+        # Step 1: Initiate payment via backend API
         result = await backend_client.initiate_payment(
             user_id=user_id,
             quote_id=quote_id,
@@ -368,7 +502,24 @@ async def initiate_purchase(
             customer_email=customer_email
         )
 
-        logger.info(f"Purchase initiated: {result.get('payment_intent_id')}")
+        payment_intent_id = result.get('payment_intent_id')
+        logger.info(f"Purchase initiated: {payment_intent_id}")
+
+        # Step 2: Create selection record via backend API
+        try:
+            selection_result = await backend_client.create_selection(
+                user_id=user_id,
+                quote_id=quote_id,
+                selected_offer_id=selected_offer_id,
+                payment_id=payment_intent_id,
+                insureds=insureds,
+                main_contact=main_contact,
+                total_price=float(amount) / 100.0
+            )
+            logger.info(f"Created selection {selection_result.get('selection_id')} for payment {payment_intent_id}")
+        except Exception as e:
+            logger.warning(f"Failed to create selection record: {e}. Payment will still work but Ancileo purchase may fail.")
+            # Don't fail the payment initiation if selection creation fails
 
         # Return widget-enabled response for OpenAI Apps SDK
         # Format amount as currency string (e.g., "150.00" from 15000 cents)
