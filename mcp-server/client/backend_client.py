@@ -28,14 +28,14 @@ class BackendClient:
     - Response validation
     """
 
-    def __init__(self, base_url: str = "http://localhost:8000"):
+    def __init__(self, base_url: str = "http://localhost:8085"):
         """
         Initialize backend client.
 
         Args:
-            base_url: Backend API base URL
+            base_url: Backend API base URL (default: http://localhost:8085)
 
-        TODO: Load base_url from configuration
+        TODO: Load base_url from environment variable
         TODO: Add authentication token handling
         """
         self.base_url = base_url.rstrip("/")
@@ -311,6 +311,117 @@ class BackendClient:
 
         except httpx.HTTPError as e:
             logger.error(f"Error getting quote payment: {e}")
+            raise
+
+    async def save_quote_for_later(
+        self,
+        quote_id: str,
+        user_id: str,
+        customer_email: str,
+        product_name: str,
+        amount: int,
+        currency: str,
+        policy_id: Optional[str] = None,
+        notes: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Save quote and generate payment link for later.
+
+        Args:
+            quote_id: Quote identifier
+            user_id: User identifier
+            customer_email: Customer email
+            product_name: Product name
+            amount: Amount in cents
+            currency: Currency code
+            policy_id: Optional policy ID
+            notes: Optional notes
+
+        Returns:
+            Payment link details
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        try:
+            response = await self.client.post(
+                "/api/purchase/save-quote",
+                json={
+                    "quote_id": quote_id,
+                    "user_id": user_id,
+                    "customer_email": customer_email,
+                    "product_name": product_name,
+                    "amount": amount,
+                    "currency": currency,
+                    "policy_id": policy_id,
+                    "notes": notes
+                }
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPError as e:
+            logger.error(f"Error saving quote: {e}")
+            raise
+
+    async def send_payment_link(
+        self,
+        quote_id: str,
+        customer_email: str,
+        customer_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Send payment link via email.
+
+        Args:
+            quote_id: Quote identifier
+            customer_email: Customer email
+            customer_name: Optional customer name
+
+        Returns:
+            Send confirmation
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        try:
+            response = await self.client.post(
+                f"/api/purchase/send-payment-link/{quote_id}",
+                json={
+                    "quote_id": quote_id,
+                    "customer_email": customer_email,
+                    "customer_name": customer_name
+                }
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPError as e:
+            logger.error(f"Error sending payment link: {e}")
+            raise
+
+    async def get_payment_link(self, quote_id: str) -> Dict[str, Any]:
+        """
+        Get payment link for quote.
+
+        Args:
+            quote_id: Quote identifier
+
+        Returns:
+            Payment link details
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        try:
+            response = await self.client.get(
+                f"/api/purchase/payment-link/{quote_id}"
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPError as e:
+            logger.error(f"Error getting payment link: {e}")
             raise
 
     # -------------------------------------------------------------------------

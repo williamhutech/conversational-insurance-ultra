@@ -362,6 +362,33 @@ class DynamoDBClient:
             logger.error(f"Failed to get payments by status: {e}")
             raise
 
+    async def get_payment_by_quote(self, quote_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get payment record for a specific quote.
+
+        Args:
+            quote_id: Quote identifier
+
+        Returns:
+            Payment record if exists, None otherwise
+
+        Note:
+            Returns the most recent payment if multiple exist for the quote.
+        """
+        try:
+            response = self.table.query(
+                IndexName='quote_id-index',
+                KeyConditionExpression='quote_id = :qid',
+                ExpressionAttributeValues={':qid': quote_id},
+                Limit=1,
+                ScanIndexForward=False  # Most recent first
+            )
+            items = response.get('Items', [])
+            return items[0] if items else None
+        except ClientError as e:
+            logger.error(f"Failed to get payment by quote {quote_id}: {e}")
+            raise
+
     # -------------------------------------------------------------------------
     # Table Management
     # -------------------------------------------------------------------------

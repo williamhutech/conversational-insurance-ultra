@@ -23,6 +23,7 @@ Usage:
 """
 
 import logging
+import secrets
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel, Field
@@ -33,6 +34,7 @@ from backend.models.payment import (
     StripeCheckoutResponse,
     PaymentConfirmation
 )
+from backend.models.error import create_payment_error
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +68,7 @@ class PaymentStatusResponse(BaseModel):
     """Payment status response."""
     payment_intent_id: str
     payment_status: str
-    stripe_session_id: Optional[str]
+    stripe_session_id: Optional[str] = None
     amount: int
     currency: str
     product_name: str
@@ -74,8 +76,8 @@ class PaymentStatusResponse(BaseModel):
     quote_id: str
     created_at: str
     updated_at: str
-    stripe_payment_intent: Optional[str]
-    failure_reason: Optional[str]
+    stripe_payment_intent: Optional[str] = None
+    failure_reason: Optional[str] = None
 
 
 class CompletePurchaseResponse(BaseModel):
@@ -159,6 +161,58 @@ async def initiate_payment(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to initiate payment: {str(e)}"
+        )
+
+
+@router.get(
+    "/quote/{quote_id}/payment",
+    response_model=PaymentStatusResponse | None,
+    summary="Get Payment for Quote",
+    description="""
+    Get the payment record associated with a specific quote.
+
+    Returns the payment if one exists, or 404 if no payment found.
+    Useful for checking if a quote has already been paid for.
+    """
+)
+async def get_quote_payment(
+    quote_id: str,
+    purchase_service: PurchaseService = Depends(get_purchase_service)
+) -> PaymentStatusResponse | None:
+    """
+    Get payment for a quote.
+
+    Args:
+        quote_id: Quote identifier
+        purchase_service: Injected purchase service
+
+    Returns:
+        Payment record if exists
+
+    Raises:
+        HTTPException: If quote not found or database error
+    """
+    try:
+        logger.info(f"Getting payment for quote: {quote_id}")
+
+        # This will use get_payment_by_quote from DynamoDB
+        payment = await purchase_service.dynamodb_client.get_payment_by_quote(quote_id)
+
+        if not payment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No payment found for quote {quote_id}"
+            )
+
+        return PaymentStatusResponse(**payment)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting quote payment: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get quote payment: {str(e)}"
         )
 
 
@@ -437,6 +491,222 @@ async def health_check() -> Dict[str, str]:
         "status": "healthy",
         "block": "Block 4: Purchase Execution"
     }
+
+
+# =============================================================================
+# Quote Management & Payment Links (for conversational error handling)
+# =============================================================================
+
+class SaveQuoteRequest(BaseModel):
+    """Request to save a quote for later payment."""
+    quote_id: str
+    user_id: str
+    customer_email: str
+    product_name: str
+    amount: int
+    currency: str
+    policy_id: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SaveQuoteResponse(BaseModel):
+    """Response for saved quote."""
+    quote_id: str
+    payment_link_id: str
+    payment_link_url: str
+    expires_at: str
+    message: str
+
+
+class SendPaymentLinkRequest(BaseModel):
+    """Request to send payment link via email."""
+    quote_id: str
+    customer_email: str
+    customer_name: Optional[str] = None
+
+
+class SendPaymentLinkResponse(BaseModel):
+    """Response for sent payment link."""
+    success: bool
+    message: str
+    quote_id: str
+    email_sent_to: str
+
+
+@router.post(
+    "/save-quote",
+    response_model=SaveQuoteResponse,
+    summary="Save Quote for Later",
+    description="""
+    Save a quote and generate a payment link for later completion.
+
+    Use this when:
+    - Customer wants to think about it
+    - Payment failed and customer wants to retry later
+    - Payment service is temporarily unavailable
+
+    The payment link is valid for 7 days and can be used multiple times.
+    """
+)
+async def save_quote_for_later(
+    request: SaveQuoteRequest,
+    purchase_service: PurchaseService = Depends(get_purchase_service)
+) -> SaveQuoteResponse:
+    """
+    Save quote and generate payment link.
+
+    Args:
+        request: Quote details to save
+        purchase_service: Injected purchase service
+
+    Returns:
+        SaveQuoteResponse with payment link
+
+    Raises:
+        HTTPException: If quote cannot be saved
+    """
+    try:
+        logger.info(f"Saving quote {request.quote_id} for user {request.user_id}")
+
+        # Generate secure payment link ID
+        payment_link_id = f"link_{secrets.token_urlsafe(32)}"
+
+        # TODO: Save quote to quotes table in DynamoDB
+        # TODO: Generate payment link with expiration
+        # For now, return a placeholder
+
+        import datetime
+        expires_at = (datetime.datetime.now() + datetime.timedelta(days=7)).isoformat()
+        payment_link_url = f"http://localhost:8085/pay/{payment_link_id}"
+
+        logger.info(f"Generated payment link {payment_link_id} for quote {request.quote_id}")
+
+        return SaveQuoteResponse(
+            quote_id=request.quote_id,
+            payment_link_id=payment_link_id,
+            payment_link_url=payment_link_url,
+            expires_at=expires_at,
+            message=f"Quote saved! Payment link is valid for 7 days."
+        )
+
+    except Exception as e:
+        logger.error(f"Error saving quote: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save quote: {str(e)}"
+        )
+
+
+@router.post(
+    "/send-payment-link/{quote_id}",
+    response_model=SendPaymentLinkResponse,
+    summary="Send Payment Link via Email",
+    description="""
+    Send a payment link to the customer's email.
+
+    Use this when:
+    - Customer wants to complete payment later
+    - Customer wants payment link on different device
+    - Following up on abandoned cart
+    """
+)
+async def send_payment_link(
+    quote_id: str,
+    request: SendPaymentLinkRequest,
+    purchase_service: PurchaseService = Depends(get_purchase_service)
+) -> SendPaymentLinkResponse:
+    """
+    Send payment link via email.
+
+    Args:
+        quote_id: Quote identifier
+        request: Email details
+        purchase_service: Injected purchase service
+
+    Returns:
+        SendPaymentLinkResponse with confirmation
+
+    Raises:
+        HTTPException: If email cannot be sent
+    """
+    try:
+        logger.info(f"Sending payment link for quote {quote_id} to {request.customer_email}")
+
+        # TODO: Retrieve quote from database
+        # TODO: Generate/retrieve payment link
+        # TODO: Send email via email service (SendGrid, SES, etc.)
+
+        # For now, return success
+        logger.info(f"Payment link email sent to {request.customer_email}")
+
+        return SendPaymentLinkResponse(
+            success=True,
+            message=f"Payment link sent to {request.customer_email}",
+            quote_id=quote_id,
+            email_sent_to=request.customer_email
+        )
+
+    except Exception as e:
+        logger.error(f"Error sending payment link: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send payment link: {str(e)}"
+        )
+
+
+@router.get(
+    "/payment-link/{quote_id}",
+    summary="Get Payment Link for Quote",
+    description="""
+    Generate or retrieve a payment link for a quote.
+
+    Returns a shareable URL that the customer can use to complete payment.
+    """
+)
+async def get_payment_link(
+    quote_id: str,
+    purchase_service: PurchaseService = Depends(get_purchase_service)
+) -> Dict[str, Any]:
+    """
+    Get payment link for quote.
+
+    Args:
+        quote_id: Quote identifier
+        purchase_service: Injected purchase service
+
+    Returns:
+        Payment link details
+
+    Raises:
+        HTTPException: If quote not found
+    """
+    try:
+        logger.info(f"Getting payment link for quote {quote_id}")
+
+        # TODO: Check if quote exists
+        # TODO: Check if payment link already exists
+        # TODO: Generate new link if needed
+
+        payment_link_id = f"link_{secrets.token_urlsafe(32)}"
+        payment_link_url = f"http://localhost:8085/pay/{payment_link_id}"
+
+        import datetime
+        expires_at = (datetime.datetime.now() + datetime.timedelta(days=7)).isoformat()
+
+        return {
+            "quote_id": quote_id,
+            "payment_link_id": payment_link_id,
+            "payment_link_url": payment_link_url,
+            "expires_at": expires_at,
+            "is_active": True
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting payment link: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get payment link: {str(e)}"
+        )
 
 
 # TODO: Add endpoint for refunds

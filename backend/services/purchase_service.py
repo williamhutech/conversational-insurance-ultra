@@ -99,6 +99,17 @@ class PurchaseService:
         TODO: Add payment amount limits
         """
         try:
+            # Step 0: Check for duplicate payment (quote already has pending/completed payment)
+            existing_payment = await self.dynamodb_client.get_payment_by_quote(quote_id)
+            if existing_payment:
+                existing_status = existing_payment.get("payment_status")
+                if existing_status in ["completed", "pending"]:
+                    logger.warning(f"Quote {quote_id} already has {existing_status} payment")
+                    raise ValueError(
+                        f"This quote already has a {existing_status} payment. "
+                        f"Payment ID: {existing_payment['payment_intent_id']}"
+                    )
+
             # Generate unique payment intent ID
             payment_intent_id = f"pi_{uuid.uuid4().hex}"
 
@@ -111,8 +122,7 @@ class PurchaseService:
                 quote_id=quote_id,
                 amount=amount,
                 currency=currency,
-                product_name=product_name,
-                metadata=metadata or {}
+                product_name=product_name
             )
 
             logger.info(f"Created payment record: {payment_intent_id}")
@@ -133,7 +143,7 @@ class PurchaseService:
             # Step 3: Update payment record with Stripe session ID
             await self.dynamodb_client.update_payment_status(
                 payment_intent_id=payment_intent_id,
-                payment_status="pending",
+                status="pending",
                 stripe_session_id=stripe_session["session_id"]
             )
 
@@ -155,12 +165,16 @@ class PurchaseService:
         except Exception as e:
             logger.error(f"Error initiating payment: {e}")
             # If we created a payment record, mark it as failed
-            if payment_intent_id:
+            if 'payment_intent_id' in locals():
                 try:
                     await self.dynamodb_client.update_payment_status(
                         payment_intent_id=payment_intent_id,
-                        payment_status="failed",
-                        failure_reason=str(e)
+                        status="failed"
+                    )
+                    # Update with failure reason
+                    await self.dynamodb_client.update_payment(
+                        payment_intent_id=payment_intent_id,
+                        updates={"failure_reason": str(e)}
                     )
                 except Exception as cleanup_error:
                     logger.error(f"Error during payment cleanup: {cleanup_error}")
@@ -291,6 +305,33 @@ class PurchaseService:
             logger.error(f"Error completing purchase: {e}")
             raise
 
+    async def get_user_payments(
+        self,
+        user_id: str,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all payments for a specific user.
+
+        Args:
+            user_id: User identifier
+            limit: Maximum number of payments to return
+
+        Returns:
+            List of payment records
+
+        Raises:
+            Exception: If database query fails
+        """
+        try:
+            payments = await self.dynamodb_client.get_user_payments(user_id, limit=limit)
+            logger.info(f"Retrieved {len(payments)} payments for user {user_id}")
+            return payments
+
+        except Exception as e:
+            logger.error(f"Error getting user payments: {e}")
+            raise
+
     async def cancel_payment(
         self,
         payment_intent_id: str,
@@ -366,7 +407,7 @@ class PurchaseService:
         TODO: Add filtering by status
         """
         try:
-            payments = await self.dynamodb_client.get_payments_by_user(
+            payments = await self.dynamodb_client.get_user_payments(
                 user_id=user_id,
                 limit=limit
             )
@@ -394,13 +435,8 @@ class PurchaseService:
         TODO: Handle multiple payments for same quote
         """
         try:
-            payments = await self.dynamodb_client.get_payments_by_quote(quote_id)
-
-            if not payments:
-                return None
-
-            # Return most recent payment
-            return payments[0] if payments else None
+            payment = await self.dynamodb_client.get_payment_by_quote(quote_id)
+            return payment
 
         except Exception as e:
             logger.error(f"Error getting quote payment: {e}")

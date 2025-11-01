@@ -280,6 +280,26 @@ async def initiate_purchase(
         - currency: Payment currency
         - expires_at: Checkout session expiration time (24 hours from creation)
 
+    Error Handling:
+        If this returns an error, handle it conversationally:
+        - "duplicate_payment": Quote already has a pending/completed payment
+          → Offer to check existing payment status or create a new quote
+        - "quote_not_found": Quote doesn't exist or expired
+          → Offer to create a new quote
+        - "service_unavailable": Payment system temporarily down
+          → Offer to save quote for later using save_quote_for_later()
+
+        Example error response:
+        {
+            "error": {
+                "error_code": "duplicate_payment",
+                "message": "This quote already has a pending payment",
+                "suggested_action": "check_existing_payment",
+                "user_message": "It looks like you've already started a payment...",
+                "can_retry": false
+            }
+        }
+
     Example:
         >>> result = await initiate_purchase(
         ...     user_id="user_123",
@@ -289,12 +309,17 @@ async def initiate_purchase(
         ...     product_name="Premium Travel Insurance - 7 Days Asia",
         ...     customer_email="customer@example.com"
         ... )
-        >>> print(f"Redirect user to: {result['checkout_url']}")
+        >>> if "error" in result:
+        ...     # Handle error conversationally using error.user_message
+        ...     print(result["error"]["user_message"])
+        ... else:
+        ...     print(f"Redirect user to: {result['checkout_url']}")
 
     Note:
         - The checkout session expires after 24 hours
         - Payment status will be updated via webhook when customer completes payment
         - Use check_payment_status() to poll payment status if needed
+        - Always check for "error" key in response before proceeding
     """
     logger.info(f"Initiating purchase for user {user_id}, quote {quote_id}")
 
@@ -313,9 +338,17 @@ async def initiate_purchase(
 
     except Exception as e:
         logger.error(f"Error initiating purchase: {e}")
+        error_message = str(e)
+
+        # Return conversational error response
         return {
-            "error": str(e),
-            "message": "Failed to initiate purchase. Please try again or contact support."
+            "error": {
+                "error_code": "payment_initiation_failed",
+                "message": error_message,
+                "user_message": f"I encountered an issue starting your payment: {error_message}. Would you like me to save this quote and send you a payment link to complete it later?",
+                "suggested_action": "save_quote_for_later",
+                "can_retry": True
+            }
         }
 
 
@@ -346,12 +379,32 @@ async def check_payment_status(payment_intent_id: str) -> Dict[str, Any]:
         - stripe_payment_intent: Stripe payment intent ID if completed
         - failure_reason: Failure reason if payment failed
 
+    Conversational Handling by Status:
+        - "completed": Great! Proceed to complete_purchase() to generate policy
+        - "pending": Customer hasn't completed payment yet. Offer to:
+          → Send payment link reminder
+          → Check if they need help
+        - "failed": Payment failed. Check failure_reason and offer:
+          → Try different payment method
+          → Save quote for later
+          → Contact support if issue persists
+        - "expired": Payment session expired (>24h). Offer to:
+          → Create new payment session
+          → Save quote for later
+        - "cancelled": Payment was cancelled. Ask if they want to:
+          → Start a new payment
+          → Get a new quote
+
     Example:
         >>> status = await check_payment_status("pi_abc123...")
         >>> if status['payment_status'] == 'completed':
-        ...     print("Payment successful! Generating policy...")
+        ...     print("Payment successful! Let me generate your policy...")
+        ...     policy = await complete_purchase(status['payment_intent_id'])
+        ... elif status['payment_status'] == 'failed':
+        ...     print(f"Payment failed: {status.get('failure_reason')}")
+        ...     print("Would you like to try a different payment method?")
         ... elif status['payment_status'] == 'pending':
-        ...     print("Waiting for customer to complete payment...")
+        ...     print("I see your payment is still pending. Would you like me to send you a reminder?")
     """
     logger.info(f"Checking payment status: {payment_intent_id}")
 
@@ -362,9 +415,16 @@ async def check_payment_status(payment_intent_id: str) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Error checking payment status: {e}")
+        error_message = str(e)
+
         return {
-            "error": str(e),
-            "message": "Failed to retrieve payment status. Please try again."
+            "error": {
+                "error_code": "payment_not_found",
+                "message": error_message,
+                "user_message": f"I couldn't find that payment record. It may not exist or there was a technical issue. Would you like to start a new purchase?",
+                "suggested_action": "create_new_payment",
+                "can_retry": False
+            }
         }
 
 
@@ -393,12 +453,28 @@ async def complete_purchase(payment_intent_id: str) -> Dict[str, Any]:
         - policy_document_url: URL to download policy PDF (when implemented)
         - created_at: Policy creation timestamp
 
+    Conversational Handling:
+        ALWAYS check payment status first before calling this tool!
+
+        Success flow:
+        1. Check payment status
+        2. If status == "completed", call this tool
+        3. Congratulate customer and provide policy details
+
+        Error scenarios:
+        - Payment not completed: "Your payment hasn't been processed yet. Let me check the status..."
+        - Payment failed: "Unfortunately your payment didn't go through. Would you like to try again?"
+        - Payment not found: "I couldn't find that payment. Let me help you start a new purchase."
+
     Example:
         >>> # First check payment is completed
         >>> status = await check_payment_status("pi_abc123...")
         >>> if status['payment_status'] == 'completed':
         ...     policy = await complete_purchase("pi_abc123...")
-        ...     print(f"Policy generated: {policy['policy_number']}")
+        ...     print(f"Congratulations! Your policy {policy['policy_number']} is now active!")
+        ...     print(f"Policy ID: {policy['policy_id']}")
+        ... else:
+        ...     print(f"Payment status is {status['payment_status']}. Cannot complete purchase yet.")
 
     Note:
         - Payment must be in "completed" status
@@ -414,10 +490,29 @@ async def complete_purchase(payment_intent_id: str) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Error completing purchase: {e}")
-        return {
-            "error": str(e),
-            "message": "Failed to complete purchase. Payment may not be completed yet."
-        }
+        error_message = str(e)
+
+        # Check if it's a "payment not completed" error
+        if "not completed" in error_message.lower():
+            return {
+                "error": {
+                    "error_code": "payment_not_completed",
+                    "message": error_message,
+                    "user_message": "Your payment hasn't been completed yet. Let me check the current status for you.",
+                    "suggested_action": "check_payment_status",
+                    "can_retry": True
+                }
+            }
+        else:
+            return {
+                "error": {
+                    "error_code": "purchase_completion_failed",
+                    "message": error_message,
+                    "user_message": f"I encountered an issue completing your purchase: {error_message}. Please contact support for assistance.",
+                    "suggested_action": "contact_support",
+                    "can_retry": False
+                }
+            }
 
 
 @mcp.tool()
@@ -458,6 +553,211 @@ async def cancel_payment(payment_intent_id: str, reason: str | None = None) -> D
         return {
             "error": str(e),
             "message": "Failed to cancel payment. It may already be completed."
+        }
+
+
+@mcp.tool()
+async def save_quote_for_later(
+    quote_id: str,
+    user_id: str,
+    customer_email: str,
+    product_name: str,
+    amount: int,
+    currency: str,
+    policy_id: str | None = None,
+    notes: str | None = None
+) -> Dict[str, Any]:
+    """
+    Save a quote and generate a payment link for later completion.
+
+    Use this when:
+    - A customer wants to think about it or compare options
+    - Payment fails and the customer wants to complete it later
+    - Customer needs to get approval before purchasing
+    - Customer prefers to pay on a different device or at a different time
+
+    This creates a payment link that's valid for 7 days. The customer can complete
+    the payment anytime within that period without needing to get a new quote.
+
+    Args:
+        quote_id: Quote identifier (e.g., "quote_abc123")
+        user_id: User/customer identifier
+        customer_email: Customer's email address
+        product_name: Product description (e.g., "Premium Travel Insurance - 7 Days Asia")
+        amount: Amount in cents (e.g., 15000 for $150.00)
+        currency: Currency code (e.g., "SGD", "USD")
+        policy_id: Optional policy ID if already selected
+        notes: Optional notes about the quote
+
+    Returns:
+        Dictionary with:
+        - quote_id: Quote identifier
+        - payment_link_id: Unique payment link identifier
+        - payment_link_url: URL for customer to complete payment
+        - expires_at: Link expiration timestamp (7 days from now)
+        - message: Confirmation message for the customer
+
+    Example conversation:
+        Customer: "I'd like to think about it and pay later"
+        AI: "No problem! Let me save this quote for you..."
+        >>> result = await save_quote_for_later(
+        ...     quote_id="quote_123",
+        ...     user_id="user_456",
+        ...     customer_email="customer@example.com",
+        ...     product_name="Premium Travel Insurance",
+        ...     amount=15000,
+        ...     currency="SGD"
+        ... )
+        AI: "I've saved your quote! I'll send you a payment link to {email}.
+             The link is valid for 7 days. You can complete your purchase anytime
+             using this link: {payment_link_url}"
+
+    Note:
+        - Payment link expires after 7 days
+        - Customer can use the link multiple times if payment fails
+        - Quote is saved and can be retrieved using get_payment_link()
+    """
+    logger.info(f"Saving quote {quote_id} for user {user_id}")
+
+    try:
+        result = await backend_client.save_quote_for_later(
+            quote_id=quote_id,
+            user_id=user_id,
+            customer_email=customer_email,
+            product_name=product_name,
+            amount=amount,
+            currency=currency,
+            policy_id=policy_id,
+            notes=notes
+        )
+
+        logger.info(f"Quote saved: {quote_id}, link: {result.get('payment_link_id')}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error saving quote: {e}")
+        return {
+            "error": str(e),
+            "message": "Failed to save quote. Please try again or contact support."
+        }
+
+
+@mcp.tool()
+async def send_payment_link(
+    quote_id: str,
+    customer_email: str,
+    customer_name: str | None = None
+) -> Dict[str, Any]:
+    """
+    Send a payment link to customer via email.
+
+    Use this when:
+    - Customer wants the payment link sent to their email
+    - Following up on a saved quote
+    - Customer requests a reminder about their pending quote
+    - Resending a payment link after it was previously sent
+
+    This sends an email with the payment link to the customer's email address.
+    The link must already exist (created via save_quote_for_later).
+
+    Args:
+        quote_id: Quote identifier that has a saved payment link
+        customer_email: Email address to send the link to
+        customer_name: Optional customer name for personalized email
+
+    Returns:
+        Dictionary with:
+        - success: Boolean indicating if email was sent
+        - message: Confirmation message
+        - quote_id: Quote identifier
+        - email_sent_to: Email address where link was sent
+
+    Example conversation:
+        Customer: "Can you send me the payment link?"
+        AI: "Of course! Let me send that to your email..."
+        >>> result = await send_payment_link(
+        ...     quote_id="quote_123",
+        ...     customer_email="customer@example.com",
+        ...     customer_name="John Doe"
+        ... )
+        AI: "I've sent the payment link to {email}. Please check your inbox
+             (and spam folder just in case). The link is valid for 7 days."
+
+    Note:
+        - Quote must have been saved first using save_quote_for_later()
+        - Email sending functionality is currently in development (placeholder)
+        - Customer can request resend if they don't receive the email
+    """
+    logger.info(f"Sending payment link for quote {quote_id} to {customer_email}")
+
+    try:
+        result = await backend_client.send_payment_link(
+            quote_id=quote_id,
+            customer_email=customer_email,
+            customer_name=customer_name
+        )
+
+        logger.info(f"Payment link sent for quote {quote_id}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error sending payment link: {e}")
+        return {
+            "error": str(e),
+            "message": "Failed to send payment link. Please try again."
+        }
+
+
+@mcp.tool()
+async def get_payment_link(quote_id: str) -> Dict[str, Any]:
+    """
+    Get or generate a payment link for a quote.
+
+    Use this when:
+    - Customer asks for their payment link
+    - You need to retrieve a previously created payment link
+    - Customer lost their payment link and needs it again
+    - Checking if a payment link exists for a quote
+
+    This retrieves the payment link for a saved quote. If the quote doesn't have
+    a payment link yet, it generates one.
+
+    Args:
+        quote_id: Quote identifier
+
+    Returns:
+        Dictionary with:
+        - quote_id: Quote identifier
+        - payment_link_id: Payment link identifier
+        - payment_link_url: URL for customer to complete payment
+        - expires_at: Link expiration timestamp
+        - is_active: Boolean indicating if link is still valid
+
+    Example conversation:
+        Customer: "I lost the payment link you sent earlier"
+        AI: "No worries! Let me retrieve that for you..."
+        >>> result = await get_payment_link("quote_123")
+        AI: "Here's your payment link: {payment_link_url}
+             This link is valid until {expires_at}. Let me know if you have
+             any questions about completing your purchase!"
+
+    Note:
+        - Returns existing link if one exists
+        - Payment links are valid for 7 days from creation
+        - Check is_active to verify link hasn't expired
+    """
+    logger.info(f"Retrieving payment link for quote {quote_id}")
+
+    try:
+        result = await backend_client.get_payment_link(quote_id)
+        logger.info(f"Payment link retrieved for quote {quote_id}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error retrieving payment link: {e}")
+        return {
+            "error": str(e),
+            "message": "Failed to retrieve payment link. The quote may not exist."
         }
 
 
