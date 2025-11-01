@@ -1,0 +1,105 @@
+# Taxonomy Extraction Pipeline Configuration
+# Orchestrates the 5-stage taxonomy extraction and aggregation workflow
+
+pipeline:
+  # Input/Output paths (all relative to taxonomy/ directory)
+  paths:
+    # Input data
+    schema_file: "data_schema/Taxonomy_Hackathon.json"  # Template schema
+    raw_text_file: "raw_text/product_dict.pkl"  # Product text mapping
+
+    # Output directory
+    output_dir: "output"
+
+  # Stage enablement flags
+  stages:
+    stage_1_key_extraction:
+      enabled: false
+      description: "Extract unique condition/benefit keys from schema"
+      input_files:
+        schema: "data_schema/Taxonomy_Hackathon.json"
+      output_files:
+        condition_names: "condition_names.json"
+        benefit_names: "benefit_names.json"
+        benefit_condition_pairs: "benefit_condition.json"
+
+    stage_2_value_extraction:
+      enabled: false
+      description: "Extract and validate values using LLMs"
+      input_files:
+        product_dict: "raw_text/product_dict.pkl"
+        condition_names: "condition_names.json"
+        benefit_names: "benefit_names.json"
+        benefit_condition_pairs: "benefit_condition.json"
+      output_files:
+        condition_values: "condition_values.json"
+        benefit_values: "benefit_values.json"
+        benefit_condition_values: "benefit_condition_values.json"
+      # Extractor-Judger pillar configuration
+      layers:
+        - name: "general_conditions"
+          extractor: "condition_extractor"
+          judger: "condition_judger"
+          reference_list: "condition_names.json"
+        - name: "benefits"
+          extractor: "benefit_extractor"
+          judger: "benefit_judger"
+          reference_list: "benefit_names.json"
+        - name: "benefit_specific_conditions"
+          extractor: "benefit_condition_extractor"
+          judger: "benefit_condition_judger"
+          reference_list: "benefit_condition.json"
+
+    stage_3_product_aggregation:
+      enabled: false
+      description: "Aggregate same condition/benefit across products"
+      input_files:
+        condition_values: "condition_values.json"
+        benefit_values: "benefit_values.json"
+        benefit_condition_values: "benefit_condition_values.json"
+      output_files:
+        condition_aggregated: "condition_value_aggregated.json"
+        benefit_aggregated: "benefit_value_aggregated.json"
+        benefit_condition_aggregated: "benefit_value_pair_aggregated.json"
+
+    stage_4_standardization:
+      enabled: false
+      description: "Standardize parameters across products using LLMs"
+      input_files:
+        condition_aggregated: "condition_value_aggregated.json"
+        benefit_aggregated: "benefit_value_aggregated.json"
+        benefit_condition_aggregated: "benefit_value_pair_aggregated.json"
+      output_files:
+        condition_standardized: "condition_value_aggregated_standardized.json"
+        benefit_standardized: "benefit_value_aggregated_standardized.json"
+        benefit_condition_standardized: "benefit_value_pair_aggregated_standardized.json"
+      # Standardizer configuration
+      layers:
+        - name: "general_conditions"
+          standardizer: "condition_standardizer"
+        - name: "benefits"
+          standardizer: "benefit_standardizer"
+        - name: "benefit_specific_conditions"
+          standardizer: "benefit_condition_standardizer"
+
+    stage_5_final_assembly:
+      enabled: true
+      description: "Merge all layers into final taxonomy"
+      input_files:
+        condition_standardized: "condition_value_aggregated_standardized.json"
+        benefit_standardized: "benefit_value_aggregated_standardized.json"
+        benefit_condition_standardized: "benefit_value_pair_aggregated_standardized.json"
+      output_file: "final_value.json"
+
+  # Extraction focus guidelines
+  extraction_focus:
+    include:
+      - "Coverage boundaries with exact limits, deductibles, and exclusions"
+      - "Eligibility criteria defining who is covered and when"
+      - "Claim procedures specifying how to access benefits"
+      - "Legal obligations containing binding contract terms"
+    exclude:
+      - "Marketing language and promotional text"
+      - "Dense legal clauses for minor provisions"
+      - "Regional terminology variations without value"
+      - "Historical background information"

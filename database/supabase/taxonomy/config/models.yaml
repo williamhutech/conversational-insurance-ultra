@@ -1,0 +1,71 @@
+# Model Configuration
+# All AI models used in the taxonomy extraction and aggregation pipeline
+
+api:
+  # OpenAI API configuration
+  url: "https://api.openai.com/v1/"
+  key: "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"  # Override with environment variable OPENAI_API_KEY
+
+models:
+  # Stage 2: General Condition Value Extraction
+  condition_extractor:
+    name: "o3"
+    use_responses_api: false
+    temperature: 0.1
+    max_tokens: 100000
+
+  # Stage 2: General Condition Value Judgment
+  condition_judger:
+    name: "gpt-4o"
+    use_responses_api: false
+    temperature: 0.0
+    max_tokens: 16000
+
+  # Stage 2: Benefits Value Extraction
+  benefit_extractor:
+    name: "o3"
+    use_responses_api: false
+    temperature: 0.1
+    max_tokens: 100000
+
+  # Stage 2: Benefits Value Judgment
+  benefit_judger:
+    name: "gpt-4o"
+    use_responses_api: false
+    temperature: 0.0
+    max_tokens: 16000
+
+  # Stage 2: Benefit-Specific Condition Value Extraction
+  benefit_condition_extractor:
+    name: "o3"
+    use_responses_api: false
+    temperature: 0.1
+    max_tokens: 100000
+
+  # Stage 2: Benefit-Specific Condition Value Judgment
+  benefit_condition_judger:
+    name: "gpt-4o"
+    use_responses_api: false
+    temperature: 0.0
+    max_tokens: 16000
+
+  # Stage 4: General Condition Standardization
+  condition_standardizer:
+    name: "o3"
+    use_responses_api: false
+    temperature: 0.8
+    max_tokens: 100000
+
+  # Stage 4: Benefits Standardization
+  benefit_standardizer:
+    name: "o3"
+    use_responses_api: false
+    temperature: 0.8
+    max_tokens: 100000
+
+  # Stage 4: Benefit-Specific Condition Standardization
+  benefit_condition_standardizer:
+    name: "o3"
+    use_responses_api: false
+    temperature: 0.8
+    max_tokens: 100000

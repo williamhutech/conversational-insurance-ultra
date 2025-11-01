@@ -1,0 +1,112 @@
+# Pipeline Configuration
+# Orchestrates the 9-stage knowledge graph generation workflow
+
+pipeline:
+  # Input/Output paths (all relative to policies/ directory)
+  paths:
+    # OCR input/output
+    pdf_input_dir: "../../policy_wordings"  # PDFs to convert
+    pdf_convert_dir: "pdf_convert"  # Markdown output from OCR
+    raw_text_dir: "raw_text"  # JSON files from OCR
+
+    # Stage outputs
+    output_dir: "."
+    temp_files_dir: "./output"
+
+  # Stage enablement flags
+  stages:
+    stage_0_ocr:
+      enabled: false
+      description: "Convert PDFs to markdown using precise_ocr"
+
+    stage_1_product_extraction:
+      enabled: false
+      description: "Extract insurance product names from text"
+      input_dir: "../raw_text"  # Relative to output/ dir, goes to policies/raw_text
+      output_file: "stage_1_product_dict.pkl"
+
+    stage_2_concept_extraction:
+      enabled: false
+      description: "Generate seed concepts from all text"
+      input_files:
+        product_dict: "stage_1_product_dict.pkl"
+      output_file: "stage_2_seed_concepts.json"
+
+    stage_3_fact_extraction:
+      enabled: false
+      description: "Extract verifiable facts about products"
+      input_files:
+        product_dict: "stage_1_product_dict.pkl"
+      output_files:
+        product_facts: "stage_3_product_facts.json"
+        all_facts: "stage_3_all_facts.json"
+
+    stage_4_concept_expansion:
+      enabled: false
+      description: "Iteratively expand concept graph"
+      iterations: 2  # Can be set to "auto" for convergence-based stopping
+      save_iterations: [1, 2]  # Save snapshots at these iteration numbers
+      input_files:
+        seed_concepts: "stage_2_seed_concepts.json"
+      output_files:
+        pattern: "concept_graph_4omini_{iter}_iter.pkl"  # {iter} replaced with iteration number
+
+    stage_5_personality_generation:
+      enabled: false
+      description: "Generate customer personas for QA generation"
+      output_file: "stage_5_personalities.json"
+
+    stage_6_fact_integration:
+      enabled: false
+      description: "Integrate facts into concept graphs"
+      input_files:
+        main_graph: "concept_graph_4omini_1_iter.pkl"
+        sub_graph: "concept_graph_4omini_1_iter.pkl"
+        all_facts: "stage_3_all_facts.json"
+        product_dict: "stage_1_product_dict.pkl"
+      output_files:
+        main_graph_with_facts: "concept_graph_4omini_1_iter_with_products_and_facts.pkl"
+        sub_graph_with_facts: "concept_graph_4omini_1_iter_with_products_and_facts.pkl"
+
+    stage_7a_concept_distillation:
+      enabled: false
+      description: "Generate single-concept QA pairs"
+      input_files:
+        concept_graph: "concept_graph_4omini_1_iter.pkl"
+        personalities: "stage_5_personalities.json"
+      output_dir: "concept_distillation"
+
+    stage_7b_pair_validation:
+      enabled: false
+      description: "Generate concept-pair QA pairs"
+      input_files:
+        concept_graph: "concept_graph_4omini_1_iter.pkl"
+        personalities: "stage_5_personalities.json"
+      output_dir: "pair_validation"
+
+    stage_7c_qa_conversion:
+      enabled: false
+      description: "Merge and convert QA collections"
+      input_files:
+        concept_distillation: "concept_distillation"
+        pair_validation: "pair_validation"
+      output_file: "stage_7c_qa_collection.json"
+
+    stage_8_memos_assembly:
+      enabled: false
+      description: "Assemble knowledge graph JSON for Neo4j"
+      input_files:
+        qa_collection: "stage_7c_qa_collection.json"
+      output_file: "stage_8_knowledge_graph.json"
+
+    stage_9_neo4j_import:
+      enabled: true
+      input_files:
+        concept_graph: "stage_8_knowledge_graph.json"
+      description: "Import knowledge graph into Neo4j"
+
+  # Convergence criteria for concept expansion (Stage 4)
+  convergence:
+    concept_add_threshold: 0.01  # Stop if < 1% new concepts added
+    connectivity_threshold: 0.01   # Stop if < 1% connectivity rate
+    max_iterations: 2           # Hard limit on iterations

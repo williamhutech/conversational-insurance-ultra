@@ -1,0 +1,10 @@
+*.png filter=lfs diff=lfs merge=lfs -text
+*.jpg filter=lfs diff=lfs merge=lfs -text
+*.pdf filter=lfs diff=lfs merge=lfs -text
+*.zip filter=lfs diff=lfs merge=lfs -text
+*.pt filter=lfs diff=lfs merge=lfs -text
+*.bin filter=lfs diff=lfs merge=lfs -text
+database/neo4j/policies/output/stage_8_knowledge_graph.json filter=lfs diff=lfs merge=lfs -text
+database/neo4j/policies/output/stage_7c_qa_collection.json filter=lfs diff=lfs merge=lfs -text
+database/neo4j/policies/output/concept_distillation/concept_distillation_batch_002_20251101_141209.pkl filter=lfs diff=lfs merge=lfs -text
+*.pkl filter=lfs diff=lfs merge=lfs -text

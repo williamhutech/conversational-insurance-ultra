@@ -1,0 +1,101 @@
+# Generation Configuration
+# Parameters for concurrency, batch processing, and generation settings
+
+# Concurrency settings (max_workers for ThreadPoolExecutor)
+concurrency:
+  # Stage-specific worker counts
+  stage_1_product_extraction: 10
+  stage_2_concept_extraction: 100
+  stage_3_fact_extraction: 100
+  stage_4_concept_expansion: 100
+  stage_5_personality_generation: 10
+  stage_7a_concept_distillation: 1000
+  stage_7b_pair_validation: 1000
+
+# Batch sizes for API calls
+batch_sizes:
+  product_extraction: 1      # Process texts individually
+  concept_extraction: 1      # Process texts individually
+  fact_extraction: 1         # Process facts individually
+  personality_generation: 5  # Generate 5 personalities per API call
+  concept_distillation: 2000   # Distill 2000 concepts per batch
+  pair_validation: 2000        # Validate 2000 pairs per batch
+
+# Batch delays (seconds between batches)
+batch_delays:
+  concept_distillation: 0
+  pair_validation: 0
+
+# Stage 2: Seed concept extraction
+seed_concepts:
+  sample_size: 3             # Sample 3 texts (first, middle, last) per file
+  deduplication:
+    enabled: true
+    similarity_threshold: 0.8  # Cosine similarity threshold for deduplication
+
+# Stage 4: Concept graph expansion
+concept_expansion:
+  similarity_threshold: 0.8  # Embedding similarity for concept deduplication
+  expansion_per_concept: 5   # Number of new concepts to generate per existing concept
+
+# Stage 5: Personality generation
+personality:
+  total_count: 100           # Total number of personalities to generate
+  fields:
+    - name
+    - sex
+    - age
+    - nationality
+    - marital_status
+    - occupation
+    - education
+    - income_level
+    - lifestyle
+    - personality_traits
+    - insurance_motivation
+    - insurance_concerns
+    - decision_making_style
+    - communication_preference
+    - insurance_experience
+
+# Stage 6: Fact-graph integration
+fact_integration:
+  top_k: 5                   # Connect each fact to top-5 similar nodes
+  batch_size: 32             # Batch size for encoding
+
+# Stage 7a: Concept distillation (single-concept QA)
+concept_distillation:
+  qa_pairs_per_concept: 3    # Generate 3 QA pairs per concept
+  use_random_personality: true
+
+# Stage 7b: Concept pair validation
+pair_validation:
+  strict_filtering: true     # Only keep pairs that meet both criteria
+  criteria:
+    - direct_insurance_relevance
+    - essential_educational_value
+
+# Stage 8: MemOS assembly
+memos_assembly:
+  embedding_batch_size: 100  # Batch size for generating embeddings
+  node_types:
+    - "Concept"
+    - "QA"
+
+# API retry configuration
+api:
+  retry:
+    total: 5
+    backoff_factor: 1.5
+    status_forcelist: [408, 429, 500, 502, 503, 504]
+  session:
+    pool_connections: 20
+    pool_maxsize: 100
+
+# OCR configuration (Stage 0)
+ocr:
+  workers: 3                 # Parallel page processing
+  zoom: 2.0                  # PDF rendering zoom (2.0x = ~144 DPI)
+  max_new_tokens: 1024       # Max tokens for OCR generation
+  output_format: "markdown"
+  save_intermediates: true   # Save per-page results

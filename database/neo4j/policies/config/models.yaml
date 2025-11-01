@@ -1,0 +1,49 @@
+# Model Configuration
+# All AI models used in the knowledge graph generation pipeline
+
+api:
+  # OpenAI API configuration
+  url: "https://api.openai.com/v1/"
+  key: "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"  # Override with environment variable OPENAI_API_KEY
+
+models:
+  # Stage 1: Product name extraction from OCR text
+  insurance_name_extractor:
+    name: "gpt-4o-mini"
+    use_responses_api: false
+
+  # Stage 2: Seed concept extraction
+  concept_extractor:
+    name: "gpt-4o"
+    use_responses_api: false
+
+  # Stage 3: Fact extraction from policies
+  fact_extractor:
+    name: "gpt-4o"
+    use_responses_api: false
+
+  # Stage 4: Concept graph expansion
+  concept_expander:
+    name: "gpt-4o-mini"
+    use_responses_api: false
+
+  # Stage 5: Personality generation
+  personality_generator:
+    name: "gpt-4.1"
+    use_responses_api: false
+
+  # Stage 7: QA synthesis for distillation and validation
+  qa_synthesizer:
+    name: "gpt-4.1-mini"
+    use_responses_api: false
+
+  # Advanced reasoning model (optional)
+  reasoning_model:
+    name: "o3"
+    use_responses_api: false
+
+  # Embedding model for semantic similarity
+  embedding:
+    name: "sentence-transformers/all-mpnet-base-v2"
+    device: "mps"  # Options: "cuda", "mps", "cpu"
+    trust_remote_code: true
