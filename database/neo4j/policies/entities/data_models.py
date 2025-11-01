@@ -244,6 +244,7 @@ class GraphNode:
     """Node in the knowledge graph following MemOS TextualMemoryItem format."""
     id: str
     memory: str  # The main content (concept name or QA text)
+    sources: List[str]  # ADDED: Required by MemOS
     metadata: Dict[str, Any]  # Contains type, embedding, entities, tags, etc.
 
     def to_dict(self) -> Dict[str, Any]:
@@ -251,6 +252,7 @@ class GraphNode:
         return {
             "id": self.id,
             "memory": self.memory,
+            "sources": self.sources,  # ADDED
             "metadata": self.metadata
         }
 
@@ -265,6 +267,7 @@ class GraphNode:
         return cls(
             id=str(uuid.uuid4()),
             memory=concept_name,  # Concept name as memory
+            sources=[],  # ADDED: Empty sources list
             metadata={
                 "type": "fact",
                 "memory_type": "UserMemory",
@@ -273,6 +276,7 @@ class GraphNode:
                 "tags": [concept_name],
                 "embedding": embedding,  # Embedding of the concept name
                 "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),  # ADDED
                 "usage": [],
                 "background": ""
             }
@@ -314,6 +318,7 @@ Best to Know: {qa_data.get('best_to_know', '')}"""
         return cls(
             id=str(uuid.uuid4()),
             memory=memory_content,
+            sources=[],  # ADDED: Empty sources list
             metadata={
                 "type": "fact",
                 "memory_type": "UserMemory",
@@ -322,6 +327,7 @@ Best to Know: {qa_data.get('best_to_know', '')}"""
                 "tags": tags,
                 "embedding": embedding,  # Embedding of the question
                 "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),  # ADDED
                 "usage": [],
                 "background": "",
                 # Store relationship info for edge creation

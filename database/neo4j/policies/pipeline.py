@@ -971,9 +971,7 @@ class KnowledgeGraphPipeline:
         print(f"  Created {relation_parent_count} Concept→Bridging QA PARENT relationships")
         print(f"Total relationships: {len(edges)}")
 
-        # ========================================================================
         # Step 6: Assemble final knowledge graph
-        # ========================================================================
         print("\n" + "-" * 80)
         print("STEP 6: ASSEMBLING KNOWLEDGE GRAPH")
         print("-" * 80)
@@ -985,7 +983,7 @@ class KnowledgeGraphPipeline:
         for concept_data in concept_nodes.values():
             all_nodes.append(concept_data["node"])
 
-        # Add QA nodes (clean up temporary fields in metadata)
+        # Add QA nodes (clean up temporary fields in metadata) - MODIFIED
         for qa_node in qa_nodes:
             # Create a clean copy without temporary fields
             clean_metadata = qa_node.metadata.copy()
@@ -994,10 +992,11 @@ class KnowledgeGraphPipeline:
             if "related_concept_ids" in clean_metadata:
                 del clean_metadata["related_concept_ids"]
 
-            # Create clean node
+            # MODIFIED: Create clean node with sources field
             clean_node = GraphNode(
                 id=qa_node.id,
                 memory=qa_node.memory,
+                sources=qa_node.sources,  # ADDED
                 metadata=clean_metadata
             )
             all_nodes.append(clean_node)

@@ -11,6 +11,8 @@ from pathlib import Path
 from decimal import Decimal
 from neo4j import GraphDatabase
 
+
+
 from ..utils.neo4j_utils import test_connection, get_database_stats, print_database_stats
 
 
@@ -87,7 +89,7 @@ class Neo4jService:
 
         Creates:
         - Database (if not exists)
-        - Unique constraints on node IDs
+        - Unique constraints on Memory node ID
         """
         print("Creating schema and constraints...")
 
@@ -103,28 +105,13 @@ class Neo4jService:
             except Exception as e:
                 print(f"⚠️  Could not create database: {e}")
 
-            # Create constraints
+            # Create constraints - MODIFIED: Use Memory label
             with self.driver.session(database=self.database) as session:
-                # Concept node constraint
                 session.run("""
-                    CREATE CONSTRAINT concept_id_unique IF NOT EXISTS
-                    FOR (n:Concept) REQUIRE n.id IS UNIQUE
+                    CREATE CONSTRAINT memory_id_unique IF NOT EXISTS
+                    FOR (n:Memory) REQUIRE n.id IS UNIQUE
                 """)
-                print("✅ Created unique constraint on Concept.id")
-
-                # QA node constraint
-                session.run("""
-                    CREATE CONSTRAINT qa_id_unique IF NOT EXISTS
-                    FOR (n:QA) REQUIRE n.id IS UNIQUE
-                """)
-                print("✅ Created unique constraint on QA.id")
-
-                # NEW: Node id unique constraint to index-back MATCH/MERGE in imports
-                session.run("""
-                    CREATE CONSTRAINT node_id_unique IF NOT EXISTS
-                    FOR (n:Node) REQUIRE n.id IS UNIQUE
-                """)
-                print("✅ Created unique constraint on Node.id")
+                print("✅ Created unique constraint on Memory.id")
 
             return True
 
@@ -272,7 +259,7 @@ class Neo4jService:
         Create indexes for query performance (MemOS-compatible).
 
         Creates:
-        - Property indexes on type, memory_type, status, memory, created_at
+        - Property indexes on memory_type, status, created_at, updated_at
         - Full-text search index on memory content
         - Vector index for semantic search on embeddings
         """
@@ -285,34 +272,33 @@ class Neo4jService:
                 self.connect()
 
             with self.driver.session(database=self.database) as session:
-                # Property indexes for MemOS fields
+                # MODIFIED: Property indexes for MemOS fields on Memory label
                 indexes = [
-                    "CREATE INDEX node_type_idx IF NOT EXISTS FOR (n:Node) ON (n.type)",
-                    "CREATE INDEX node_memory_type_idx IF NOT EXISTS FOR (n:Node) ON (n.memory_type)",
-                    "CREATE INDEX node_status_idx IF NOT EXISTS FOR (n:Node) ON (n.status)",
-                    "CREATE INDEX node_memory_idx IF NOT EXISTS FOR (n:Node) ON (n.memory)",
-                    "CREATE INDEX node_created_idx IF NOT EXISTS FOR (n:Node) ON (n.created_at)",
+                    "CREATE INDEX memory_type_idx IF NOT EXISTS FOR (n:Memory) ON (n.memory_type)",
+                    "CREATE INDEX memory_status_idx IF NOT EXISTS FOR (n:Memory) ON (n.status)",
+                    "CREATE INDEX memory_created_at_idx IF NOT EXISTS FOR (n:Memory) ON (n.created_at)",
+                    "CREATE INDEX memory_updated_at_idx IF NOT EXISTS FOR (n:Memory) ON (n.updated_at)",
                 ]
 
                 for index_query in indexes:
                     session.run(index_query)
                     print(f"✅ Property index created")
 
-                # Full-text search index on memory content
+                # MODIFIED: Full-text search index on Memory.memory
                 try:
                     session.run("""
-                        CREATE FULLTEXT INDEX node_memory_fulltext IF NOT EXISTS
-                        FOR (n:Node) ON EACH [n.memory]
+                        CREATE FULLTEXT INDEX memory_fulltext IF NOT EXISTS
+                        FOR (n:Memory) ON EACH [n.memory]
                     """)
-                    print("✅ Full-text index created for Node.memory")
+                    print("✅ Full-text index created for Memory.memory")
                 except Exception as e:
                     print(f"⚠️  Full-text index creation failed: {e}")
 
-                # Vector index for semantic search on embeddings
+                # MODIFIED: Vector index on Memory.embedding
                 try:
                     session.run("""
-                        CREATE VECTOR INDEX node_embedding_vector_idx IF NOT EXISTS
-                        FOR (n:Node) ON (n.embedding)
+                        CREATE VECTOR INDEX memory_vector_index IF NOT EXISTS
+                        FOR (n:Memory) ON (n.embedding)
                         OPTIONS {indexConfig: {
                             `vector.dimensions`: 768,
                             `vector.similarity_function`: 'cosine'
@@ -379,37 +365,32 @@ class Neo4jService:
     def _prepare_node(self, node: Dict) -> Dict:
         """Prepare node data for import (MemOS-compatible structure from Stage 8)."""
         node = self._clean_data_types(node)
-        metadata = node.get('metadata', {})
+        metadata = node.get('metadata', {}).copy()
+        
+        # MODIFIED: Ensure created_at and updated_at exist
+        if 'created_at' not in metadata:
+            metadata['created_at'] = datetime.now().isoformat()
+        if 'updated_at' not in metadata:
+            metadata['updated_at'] = datetime.now().isoformat()
 
         return {
             'id': node.get('id'),
-            'memory': node.get('memory', ''),                    # Main content (concept name or QA text)
-            'type': metadata.get('type', ''),                    # Extract from metadata
-            'memory_type': metadata.get('memory_type', ''),      # MemOS field
-            'status': metadata.get('status', ''),                # MemOS field
-            'entities': metadata.get('entities', []),            # List of entity names
-            'tags': metadata.get('tags', []),                    # List of tags
-            'embedding': metadata.get('embedding', []),          # Embedding vector (list of floats)
-            'created_at': metadata.get('created_at', ''),        # ISO datetime string
-            'usage': metadata.get('usage', []),                  # Usage history (empty list)
-            'background': metadata.get('background', '')         # Background info (empty string)
+            'memory': node.get('memory', ''),
+            'sources': node.get('sources', []),  # ADDED: Required by MemOS
+            'metadata': self._clean_data_types(metadata)
         }
 
     def _execute_node_batch(self, batch: List[Dict]) -> int:
         """Execute node batch import (MemOS-compatible properties)."""
         cypher = """
         UNWIND $batch AS row
-        MERGE (n:Node {id: row.id})
-        SET n.memory = row.memory,
-            n.type = row.type,
-            n.memory_type = row.memory_type,
-            n.status = row.status,
-            n.entities = row.entities,
-            n.tags = row.tags,
-            n.embedding = row.embedding,
-            n.created_at = datetime(row.created_at),
-            n.usage = row.usage,
-            n.background = row.background
+        MERGE (n:Memory {id: row.id})
+        SET n.key = row.id,
+            n.memory = row.memory,
+            n.sources = row.sources,
+            n.created_at = datetime(row.metadata.created_at),
+            n.updated_at = datetime(row.metadata.updated_at),
+            n += row.metadata
         RETURN count(n) AS imported
         """
         try:
@@ -425,11 +406,11 @@ class Neo4jService:
         # Use APOC for dynamic relationship type creation
         cypher = """
         UNWIND $batch AS row
-        MATCH (s:Node {id: row.source})
-        MATCH (t:Node {id: row.target})
-        CALL apoc.create.relationship(s, row.type, {created_at: datetime(row.created_at)}, t)
-        YIELD rel
-        RETURN count(rel) AS imported
+        MATCH (s:Memory {id: row.source})
+        MATCH (t:Memory {id: row.target})
+        MERGE (s)-[r:PARENT]->(t)
+        SET r.created_at = datetime(row.created_at)
+        RETURN count(r) AS imported
         """
         try:
             with self.driver.session(database=self.database) as session:

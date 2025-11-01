@@ -4,77 +4,47 @@ LLM-Based Routing Service
 Uses gpt-4o-mini to intelligently route policy data queries to appropriate
 Supabase tables based on the query's semantic meaning.
 """
-
-import json
+from dotenv import load_dotenv
+import json, os
 import logging
 from typing import Tuple, Optional, List, Dict, Any
 
 from openai import AsyncOpenAI
 
-from backend.config import settings
+# Load environment variables from .env
+load_dotenv()
+
 from backend.database.postgres_client import get_supabase
 
 logger = logging.getLogger(__name__)
 
 
 # Routing prompt template based on taxonomy documentation
-ROUTING_PROMPT = """You are a travel insurance policy data router. Your task is to analyze queries and determine which database table(s) to search.
+ROUTING_PROMPT = """Route this travel insurance query to the correct database table(s).
 
-AVAILABLE TABLES:
+TABLES:
+1. **general_conditions** - Policy eligibility, age limits, trip origin requirements, universal exclusions (pre-existing conditions, dangerous activities, prohibited destinations)
+2. **benefits** - Coverage types, benefit amounts, coverage limits, what's covered
+3. **benefit_conditions** - Claim requirements, time limits, minimum thresholds, proof requirements, benefit-specific exclusions
 
-1. **general_conditions** (Layer 1: Policy-Wide Rules)
-   - Policy-wide eligibility requirements (age limits, trip origin requirements, health declarations, purchase timing)
-   - Universal exclusions (pre-existing conditions, dangerous activities, prohibited destinations, war/terrorism, pandemic)
-   - Examples: "age restrictions", "pre-existing medical conditions", "trip must start from Singapore", "dangerous sports exclusions"
+ROUTING LOGIC:
+- Eligibility/age/trip requirements/general exclusions → ["general_conditions"]
+- Coverage types/benefit amounts/limits → ["benefits"]
+- Claim requirements/documentation/thresholds → ["benefit_conditions"]
+- Broad comparison/analysis → Multiple tables
+- Very general questions → All three tables
 
-2. **benefits** (Layer 2: Coverage & Benefits)
-   - Available insurance coverages and what's covered
-   - Coverage limits and amounts
-   - Types of protection offered (medical, trip cancellation, baggage, liability)
-   - Examples: "medical expenses coverage", "trip cancellation benefits", "baggage delay compensation", "coverage limits"
+Return ONLY valid JSON: {{"tables": ["table_name1", "table_name2"]}}
 
-3. **benefit_conditions** (Layer 3: Benefit-Specific Requirements)
-   - Specific requirements for claiming each benefit
-   - Time limits for claims
-   - Minimum thresholds and proof requirements
-   - Benefit-specific exclusions
-   - Examples: "how long before baggage is considered delayed", "claim documentation needed", "minimum delay for compensation"
-
-ROUTING RULES:
-
-- Query about **age/eligibility/trip requirements/general exclusions** → ["general_conditions"]
-- Query about **coverage types/benefits/what's covered/limits** → ["benefits"]
-- Query about **claiming/requirements/documentation/thresholds for specific benefits** → ["benefit_conditions"]
-- Query **comparing/analyzing multiple aspects** → multiple tables (e.g., ["benefits", "benefit_conditions"])
-- Query **very general/broad** → all three tables: ["general_conditions", "benefits", "benefit_conditions"]
-
-IMPORTANT:
-- Return ONLY a JSON object with a "tables" array containing 1-3 table names
-- Table names must be EXACTLY: "general_conditions", "benefits", or "benefit_conditions"
-- Do not include any other text or explanation
-
-EXAMPLES:
-
-Query: "What are the age restrictions for travel insurance?"
-Response: {"tables": ["general_conditions"]}
-
-Query: "What medical expenses are covered?"
-Response: {"tables": ["benefits"]}
-
-Query: "How long must my baggage be delayed to claim compensation?"
-Response: {"tables": ["benefit_conditions"]}
-
-Query: "Compare trip cancellation coverage across policies"
-Response: {"tables": ["benefits", "benefit_conditions"]}
-
-Query: "Tell me everything about travel insurance for seniors"
-Response: {"tables": ["general_conditions", "benefits", "benefit_conditions"]}
-
-NOW ROUTE THIS QUERY:
+Examples:
+- "age restrictions" → {{"tables": ["general_conditions"]}}
+- "medical coverage" → {{"tables": ["benefits"]}}
+- "baggage delay claim" → {{"tables": ["benefit_conditions"]}}
+- "trip cancellation comparison" → {{"tables": ["benefits", "benefit_conditions"]}}
+- "everything about seniors" → {{"tables": ["general_conditions", "benefits", "benefit_conditions"]}}
 
 Query: {query}
-
-Respond with JSON only:"""
+JSON:"""
 
 
 class RoutingService:
@@ -92,12 +62,12 @@ class RoutingService:
 
     async def connect(self):
         """Initialize OpenAI client."""
-        if not settings.openai_api_key:
+        if not os.getenv("OPENAI_API_KEY"):
             raise ValueError("OPENAI_API_KEY is required for routing service")
 
         self.openai = AsyncOpenAI(
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_api_base_url
+            api_key=os.getenv("OPENAI_API_KEY"),
+            base_url=os.getenv("OPENAI_API_BASE_URL")
         )
         logger.info("Routing service initialized with gpt-4o-mini")
 
@@ -254,3 +224,31 @@ async def get_routing_service() -> RoutingService:
         await _routing_service.connect()
 
     return _routing_service
+
+# Write a testing script for the RoutingService class defined above.
+if __name__ == "__main__":
+    import asyncio
+
+    async def test_routing_service():
+        service = RoutingService()
+        await service.connect()
+
+        test_queries = [
+            "What are the age restrictions for travel insurance?",
+            "Explain the medical coverage benefits.",
+            "How do I file a baggage delay claim?",
+            "Compare trip cancellation policies.",
+            "Tell me everything about senior travel insurance."
+        ]
+
+        for query in test_queries:
+            status_code, results = await service.route_query(query, top_k=5)
+            print(f"Query: {query}")
+            print(f"Status Code: {status_code}")
+            if results is not None:
+                print(f"Results ({len(results)}): {results}")
+            else:
+                print("No results returned.")
+            print("-" * 50)
+
+    asyncio.run(test_routing_service())

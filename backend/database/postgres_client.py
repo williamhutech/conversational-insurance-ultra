@@ -16,13 +16,15 @@ Usage:
     client = SupabaseClient()
     policies = await client.get_policies()
 """
-
+from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
 from supabase import create_client, Client
 from openai import AsyncOpenAI
-import logging
+import logging, os
 
-from backend.config import settings
+
+# Load environment variables from .env
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +42,8 @@ class SupabaseClient:
 
     def __init__(self):
         """Initialize Supabase client with credentials from settings."""
-        self.url = settings.supabase_url
-        self.key = settings.supabase_service_key  # Use service key for backend
+        self.url = os.getenv("SUPABASE_STRUCTURED_URL")
+        self.key = os.getenv("SUPABASE_STRUCTURED_SERVICE_KEY")
         self.client: Optional[Client] = None
         self.openai: Optional[AsyncOpenAI] = None
 
@@ -59,10 +61,10 @@ class SupabaseClient:
             logger.info("Connected to Supabase")
 
             # Initialize OpenAI client for embeddings
-            if settings.openai_api_key:
+            if os.getenv("OPENAI_API_KEY"):
                 self.openai = AsyncOpenAI(
-                    api_key=settings.openai_api_key,
-                    base_url=settings.openai_api_base_url
+                    api_key=os.getenv("OPENAI_API_KEY"),
+                    base_url=os.getenv("OPENAI_API_BASE_URL")
                 )
                 logger.info("Initialized OpenAI client for embeddings")
         except Exception as e:
@@ -238,8 +240,9 @@ class SupabaseClient:
 
         try:
             response = await self.openai.embeddings.create(
-                model=settings.default_embedding_model,
-                input=text
+                model=os.getenv("DEFAULT_EMBEDDING_MODEL", "text-embedding-3-large"),
+                input=text,
+                dimensions=2000
             )
             embedding = response.data[0].embedding
             logger.debug(f"Generated embedding with {len(embedding)} dimensions")
@@ -476,3 +479,150 @@ async def get_supabase() -> SupabaseClient:
         _supabase_client = SupabaseClient()
         await _supabase_client.connect()
     return _supabase_client
+
+
+"""
+Ad-hoc tests for SupabaseClient.
+
+Usage:
+    python -m tests.test_supabase_client
+"""
+
+import asyncio
+import json
+import logging
+import os
+import sys
+import time
+from typing import Any, Dict, List, Optional
+
+# Adjust this import to your project layout if needed
+try:
+    from backend.database.postgres_client import SupabaseClient, get_supabase
+except ModuleNotFoundError as e:
+    print("Import error: make sure this file is inside your project and PYTHONPATH is set.")
+    print(e)
+    sys.exit(1)
+
+
+def _hr(title: str) -> None:
+    print("\n" + "=" * 80)
+    print(title)
+    print("=" * 80)
+
+
+def _pretty(obj: Any) -> str:
+    try:
+        return json.dumps(obj, ensure_ascii=False, indent=2)
+    except TypeError:
+        return str(obj)
+
+
+def _print_rows(rows: List[Dict], limit: int = 3) -> None:
+    if not rows:
+        print("No rows returned.")
+        return
+    n = min(len(rows), limit)
+    for i in range(n):
+        print(f"- Row {i+1}/{len(rows)}:")
+        print(_pretty(rows[i]))
+        print("-" * 40)
+    if len(rows) > limit:
+        print(f"... and {len(rows) - limit} more rows")
+
+
+async def test_connect_disconnect() -> None:
+    _hr("TEST 1: Connect / Disconnect")
+    client = SupabaseClient()
+    t0 = time.time()
+    await client.connect()
+    print(f"Connected in {time.time() - t0:.3f}s")
+    print(f"Supabase URL: {client.url!r}")
+    print(f"Supabase client initialized: {client.client is not None}")
+    print(f"OpenAI client initialized: {client.openai is not None}")
+    await client.disconnect()
+    print("Disconnected.")
+
+
+async def test_global_getter() -> None:
+    _hr("TEST 2: Global get_supabase()")
+    t0 = time.time()
+    client = await get_supabase()
+    print(f"get_supabase() returned in {time.time() - t0:.3f}s")
+    print(f"Client is SupabaseClient: {isinstance(client, SupabaseClient)}")
+    print(f"Supabase client initialized: {client.client is not None}")
+    print(f"OpenAI client initialized: {client.openai is not None}")
+
+
+async def test_vector_searches(query: str = "pre-existing condition coverage", top_k: int = 5) -> None:
+    _hr("TEST 3: Vector searches (general_conditions / benefits / benefit_conditions / original_text)")
+    client = await get_supabase()
+
+    # Check if embeddings are possible
+    if not client.openai:
+        print("Skipping vector search tests because OpenAI client is not configured.")
+        print("Required: settings.openai_api_key and settings.default_embedding_model")
+        return
+
+    print(f"Query: {query!r} | top_k={top_k}")
+
+    # general_conditions
+    try:
+        t0 = time.time()
+        rows = await client.search_general_conditions(query=query, top_k=top_k)
+        print(f"[general_conditions] {len(rows)} results in {time.time() - t0:.3f}s")
+        _print_rows(rows)
+    except Exception as e:
+        print(f"[general_conditions] ERROR: {e}")
+
+    # benefits
+    try:
+        t0 = time.time()
+        rows = await client.search_benefits(query=query, top_k=top_k)
+        print(f"[benefits] {len(rows)} results in {time.time() - t0:.3f}s")
+        _print_rows(rows)
+    except Exception as e:
+        print(f"[benefits] ERROR: {e}")
+
+    # benefit_conditions
+    try:
+        t0 = time.time()
+        rows = await client.search_benefit_conditions(query=query, top_k=top_k)
+        print(f"[benefit_conditions] {len(rows)} results in {time.time() - t0:.3f}s")
+        _print_rows(rows)
+    except Exception as e:
+        print(f"[benefit_conditions] ERROR: {e}")
+
+    # original_text
+    try:
+        t0 = time.time()
+        texts = await client.search_original_text(query=query, top_k=top_k)
+        dt = time.time() - t0
+        print(f"[original_text] {len(texts)} text chunks in {dt:.3f}s")
+        preview_n = min(len(texts), 3)
+        for i in range(preview_n):
+            snippet = texts[i]
+            if len(snippet) > 400:
+                snippet = snippet[:400] + " ..."
+            print(f"- Text {i+1}/{len(texts)}:\n{snippet}\n" + "-" * 40)
+        if len(texts) > preview_n:
+            print(f"... and {len(texts) - preview_n} more chunks")
+    except Exception as e:
+        print(f"[original_text] ERROR: {e}")
+
+
+async def main() -> None:
+    # Optional: make logs visible
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+
+    # Run tests
+    await test_connect_disconnect()
+    await test_global_getter()
+    await test_vector_searches(
+        query=os.environ.get("TEST_VECTOR_QUERY", "pre-existing condition coverage"),
+        top_k=int(os.environ.get("TEST_VECTOR_TOPK", "5")),
+    )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

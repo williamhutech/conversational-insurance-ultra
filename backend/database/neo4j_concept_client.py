@@ -5,13 +5,18 @@ Uses MemOS TreeTextMemory for concept-based semantic search in Neo4j.
 Integrates with OpenAI for embeddings and LLM processing.
 """
 
+import json
 import logging
+import os
+import tempfile
 from typing import List, Optional
 
+from dotenv import load_dotenv
 from memos.configs.memory import TreeTextMemoryConfig
 from memos.memories.textual.tree import TreeTextMemory
 
-from backend.config import settings
+# Load environment variables from .env
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +36,7 @@ class Neo4jConceptClient:
 
     async def connect(self):
         """
-        Initialize TreeTextMemory with configuration from settings.
+        Initialize TreeTextMemory with configuration from environment variables.
 
         Raises:
             ValueError: If required configuration is missing
@@ -39,11 +44,22 @@ class Neo4jConceptClient:
         """
         logger.info("Initializing Neo4j concept client with MemOS TreeTextMemory")
 
+        # Load environment variables
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        openai_api_base_url = os.getenv("OPENAI_API_BASE_URL", "https://api.openai.com/v1")
+        neo4j_policy_uri = os.getenv("NEO4J_POLICY_URI")
+        neo4j_policy_username = os.getenv("NEO4J_POLICY_USERNAME", "neo4j")
+        neo4j_policy_password = os.getenv("NEO4J_POLICY_PASSWORD")
+        neo4j_policy_database = os.getenv("NEO4J_POLICY_DATABASE", "neo4j")
+        default_embedding_model = os.getenv("DEFAULT_EMBEDDING_MODEL", "text-embedding-3-small")
+
         # Validate required settings
-        if not settings.openai_api_key:
+        if not openai_api_key:
             raise ValueError("OPENAI_API_KEY is required for concept search")
-        if not settings.neo4j_password:
-            raise ValueError("NEO4J_PASSWORD is required for concept search")
+        if not neo4j_policy_password:
+            raise ValueError("NEO4J_POLICY_PASSWORD is required for concept search")
+        if not neo4j_policy_uri:
+            raise ValueError("NEO4J_POLICY_URI is required for concept search")
 
         # Build MemOS configuration dictionary
         config_dict = {
@@ -51,8 +67,8 @@ class Neo4jConceptClient:
                 "backend": "openai",
                 "config": {
                     "model_name_or_path": "gpt-4o-mini",
-                    "api_key": settings.openai_api_key,
-                    "api_base": settings.openai_api_base_url,
+                    "api_key": openai_api_key,
+                    "api_base": openai_api_base_url,
                     "temperature": 0.5,
                     "remove_think_prefix": True,
                     "max_tokens": 8192
@@ -62,42 +78,50 @@ class Neo4jConceptClient:
                 "backend": "openai",
                 "config": {
                     "model_name_or_path": "gpt-4o-mini",
-                    "api_key": settings.openai_api_key,
-                    "api_base": settings.openai_api_base_url,
+                    "api_key": openai_api_key,
+                    "api_base": openai_api_base_url,
                     "temperature": 0.5,
                     "remove_think_prefix": True,
                     "max_tokens": 8192
                 }
             },
             "embedder": {
-                "backend": "openai",
+                "backend": "sentence_transformer",
                 "config": {
-                    "model": settings.default_embedding_model,
-                    "api_key": settings.openai_api_key,
-                    "api_base": settings.openai_api_base_url
+                    "model_name_or_path": "sentence-transformers/all-mpnet-base-v2"
                 }
             },
             "graph_db": {
                 "backend": "neo4j",
                 "config": {
-                    "uri": settings.neo4j_uri,
-                    "user": settings.neo4j_user,
-                    "password": settings.neo4j_password,
-                    "db_name": settings.neo4j_database,
-                    "auto_create": True,
-                    "embedding_dimension": 1536  # OpenAI text-embedding-3-small dimension
+                    "uri": neo4j_policy_uri,
+                    "user": neo4j_policy_username,
+                    "password": neo4j_policy_password,
+                    "db_name": neo4j_policy_database,
+                    "auto_create": False,  # Set to False for Neo4j Aura (cloud) - database must exist
+                    "embedding_dimension": 768  # sentence-transformers/all-mpnet-base-v2 dimension
                 }
             }
         }
 
         try:
-            # Create TreeTextMemoryConfig from dictionary
-            self._config = TreeTextMemoryConfig.from_dict(config_dict)
+            # Write config to temporary JSON file (required by TreeTextMemoryConfig)
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
+                json.dump(config_dict, f, indent=2, ensure_ascii=False)
+                temp_config_path = f.name
 
-            # Initialize TreeTextMemory
-            self.tree_memory = TreeTextMemory(self._config)
+            try:
+                # Create TreeTextMemoryConfig from JSON file
+                self._config = TreeTextMemoryConfig.from_json_file(temp_config_path)
 
-            logger.info(f"Successfully initialized Neo4j concept client (database: {settings.neo4j_database})")
+                # Initialize TreeTextMemory
+                self.tree_memory = TreeTextMemory(self._config)
+
+                print(f"Successfully initialized Neo4j concept client (database: {neo4j_policy_database})")
+            finally:
+                # Clean up temporary config file
+                if os.path.exists(temp_config_path):
+                    os.unlink(temp_config_path)
 
         except Exception as e:
             logger.error(f"Failed to initialize Neo4j concept client: {e}")
@@ -129,6 +153,8 @@ class Neo4jConceptClient:
 
         logger.info(f"Searching concepts with query: '{query}' (top_k={top_k})")
 
+        print("All Memories:")
+
         try:
             # Execute search using TreeTextMemory
             results = self.tree_memory.search(query, top_k=top_k)
@@ -156,22 +182,3 @@ class Neo4jConceptClient:
             self.tree_memory = None
             self._config = None
 
-
-# Global client instance
-_client_instance: Optional[Neo4jConceptClient] = None
-
-
-async def get_neo4j_concept_client() -> Neo4jConceptClient:
-    """
-    Get or create the global Neo4j concept client instance.
-
-    Returns:
-        Initialized Neo4jConceptClient instance
-    """
-    global _client_instance
-
-    if _client_instance is None:
-        _client_instance = Neo4jConceptClient()
-        await _client_instance.connect()
-
-    return _client_instance
