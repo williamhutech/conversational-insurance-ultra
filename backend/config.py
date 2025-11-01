@@ -152,8 +152,8 @@ class Settings(BaseSettings):
     # -----------------------------------------------------------------------------
     # Ancileo Travel Insurance API
     # -----------------------------------------------------------------------------
-    insurance_api_key: str = Field(..., description="Ancileo/Insurance API key", alias="INSURANCE_API_KEY")
-    insurance_api_base_url: str = Field(..., description="Ancileo/Insurance API base URL", alias="INSURANCE_API_BASE_URL")
+    insurance_api_key: str = Field(..., description="Insurance API key", alias="INSURANCE_API_KEY")
+    insurance_api_base_url: str = Field(..., description="Insurance API base URL", alias="INSURANCE_API_BASE_URL")
 
     # -----------------------------------------------------------------------------
     # Development & Testing
