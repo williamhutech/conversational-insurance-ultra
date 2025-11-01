@@ -24,6 +24,8 @@ Or configure in Claude Desktop / ChatGPT:
 """
 
 import logging
+from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 from typing import Any, Dict, List
 from fastmcp import FastMCP
 
@@ -50,15 +52,47 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize FastMCP server
-mcp = FastMCP(
-    name="insurance-ultra-mcp",
-    version="0.1.0",
-    description="AI-powered conversational insurance platform MCP server"
-)
-
 # Initialize backend client
 backend_client = BackendClient()
+
+
+# Application lifecycle management
+@asynccontextmanager
+async def app_lifespan(server: FastMCP) -> AsyncIterator[dict]:
+    """
+    Application lifecycle management for FastMCP server.
+
+    Handles:
+    - Backend client initialization and connectivity verification
+    - Resource cleanup on shutdown
+    """
+    logger.info("Starting Insurance Ultra MCP Server v0.1.0")
+
+    # Startup: Verify backend connectivity
+    try:
+        response = await backend_client.client.get("/health")
+        health_data = response.json()
+        logger.info(f"Backend health check: {health_data}")
+    except Exception as e:
+        logger.error(f"Backend connection failed: {e}")
+        logger.warning("Server starting without backend connectivity")
+
+    try:
+        yield {}  # Server runs here
+    finally:
+        # Shutdown: Clean up resources
+        logger.info("Shutting down Insurance Ultra MCP Server")
+        await backend_client.close()
+        logger.info("Backend client closed successfully")
+
+
+# Initialize FastMCP server with lifespan
+mcp = FastMCP(
+    name="insurance-ultra-mcp",
+    instructions="AI-powered conversational insurance platform MCP server",
+    version="0.1.0",
+    lifespan=app_lifespan
+)
 
 
 # =============================================================================
@@ -841,26 +875,9 @@ async def manage_conversation_memory(
 
 
 # =============================================================================
-# Server Lifecycle
+# Server Entry Point
 # =============================================================================
 
-@mcp.startup()
-async def startup():
-    """Initialize MCP server and connections."""
-    logger.info("Starting Insurance Ultra MCP Server")
-    # TODO: Initialize backend API client
-    # TODO: Verify backend connectivity
-    # TODO: Load configuration
-
-
-@mcp.shutdown()
-async def shutdown():
-    """Clean up resources on shutdown."""
-    logger.info("Shutting down Insurance Ultra MCP Server")
-    # TODO: Close connections
-    # TODO: Save session state
-
-
 if __name__ == "__main__":
-    # Run the MCP server
-    mcp.run()
+    # Run the MCP server with STDIO transport
+    mcp.run(transport="stdio")

@@ -178,7 +178,13 @@ class BackendClient:
             return response.json()
 
         except httpx.HTTPError as e:
-            logger.error(f"Error initiating payment: {e}")
+            logger.error(f"HTTP Error initiating payment: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response body: {e.response.text}")
+            else:
+                logger.error(f"No response object available - likely connection error")
             raise
 
     async def get_payment_status(self, payment_intent_id: str) -> Dict[str, Any]:
