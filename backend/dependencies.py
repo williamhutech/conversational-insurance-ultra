@@ -22,7 +22,8 @@ from backend.config import settings
 # from backend.database.postgres_client import SupabaseClient
 # from backend.database.neo4j_client import Neo4jClient
 # from backend.database.vector_client import VectorClient
-# from backend.database.mem0_client import Mem0Client
+from backend.database.mem0_client import Mem0Client
+from backend.services.memory_service import MemoryService
 
 
 # -----------------------------------------------------------------------------
@@ -129,23 +130,17 @@ async def get_mem0_client():
     Raises:
         HTTPException: If connection fails
     """
-    # TODO: Implement Mem0 client
-    # TODO: Add session management
-    # TODO: Configure memory retention policies
-
     try:
-        # client = Mem0Client(
-        #     api_key=settings.mem0_api_key,
-        #     org_id=settings.mem0_org_id,
-        #     project_id=settings.mem0_project_id
-        # )
-        # yield client
-        pass
+        client = Mem0Client()
+        await client.connect()
+        yield client
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Memory service unavailable: {str(e)}"
         )
+    finally:
+        await client.disconnect()
 
 
 # -----------------------------------------------------------------------------
@@ -210,6 +205,23 @@ async def get_analytics_service():
     # from backend.services.recommendation_engine import AnalyticsService
     # return AnalyticsService()
     pass
+
+
+async def get_memory_service(
+    mem0_client: Mem0Client = Depends(get_mem0_client)
+) -> MemoryService:
+    """
+    Dependency for memory management service.
+
+    Provides conversation memory, user preferences, and context management.
+
+    Args:
+        mem0_client: Mem0 client instance
+
+    Returns:
+        MemoryService: Configured memory service
+    """
+    return MemoryService(mem0_client=mem0_client)
 
 
 # -----------------------------------------------------------------------------

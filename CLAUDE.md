@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Use context7 mcp to get latest documents and developed based on it
+
 ## Project Overview
 
 **Conversational Insurance Ultra** is an AI-powered conversational insurance platform that transforms how customers discover, compare, and purchase travel insurance through natural language conversations on Claude/ChatGPT using the Model Context Protocol (MCP).

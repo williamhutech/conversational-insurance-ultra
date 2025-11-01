@@ -1,26 +1,47 @@
 """
-Mem0 Customer Conversation Memory Client
+Mem0 Customer Conversation Memory Client (Cloud Version)
+
+Uses Mem0 Platform (Cloud) hosted service at api.mem0.ai.
+This is NOT the OSS (self-hosted) version.
 
 Manages long-term and short-term memory for customer conversations.
 Tracks customer preferences, conversation history, and context across sessions.
 
-Features:
-- Session-based conversation memory
-- Customer preference tracking
-- Context retrieval for personalization
-- Memory persistence across chats
+Cloud Features:
+- Managed vector store and embeddings
+- Automatic memory extraction from conversations
+- Semantic search across memories
+- Multi-user memory isolation
+- Organization and project management
+
+Requirements:
+- MEM0_API_KEY: Required API key from Mem0 Platform (get it from https://app.mem0.ai)
 
 Usage:
     from backend.database.mem0_client import Mem0Client
 
     client = Mem0Client()
-    await client.add_memory(customer_id, "Prefers comprehensive medical coverage")
-    memories = await client.get_memories(customer_id)
+    await client.connect()
+    
+    # Add memory from conversation
+    result = await client.add_memory(
+        user_id="customer_123",
+        messages=[
+            {"role": "user", "content": "I prefer high medical coverage"},
+            {"role": "assistant", "content": "I'll remember that"}
+        ]
+    )
+    
+    # Get all memories
+    memories = await client.get_all_memories("customer_123")
+    
+    # Search memories
+    results = await client.search_memories("customer_123", "medical preferences")
 """
 
 from typing import List, Dict, Any, Optional
 import logging
-from mem0 import Memory
+from mem0 import AsyncMemoryClient
 
 from backend.config import settings
 
@@ -39,25 +60,39 @@ class Mem0Client:
     """
 
     def __init__(self):
-        """Initialize Mem0 client with API credentials."""
+        """
+        Initialize Mem0 Cloud client with API key.
+        
+        Raises:
+            ValueError: If MEM0_API_KEY is not configured
+        """
+        if not settings.mem0_api_key:
+            raise ValueError(
+                "MEM0_API_KEY is required for Mem0 Cloud. "
+                "Please set it in your .env file or environment variables."
+            )
+        
         self.api_key = settings.mem0_api_key
-        self.org_id = settings.mem0_org_id
-        self.project_id = settings.mem0_project_id
-        self.client: Optional[Memory] = None
+        self.client: Optional[AsyncMemoryClient] = None
+        
+        logger.debug("Mem0Client initialized with Cloud configuration (API key only)")
 
     async def connect(self):
         """
-        Initialize Mem0 client connection.
+        Initialize Mem0 Platform (cloud) client connection.
 
-        TODO: Verify API key is valid
-        TODO: Check org and project access
-        TODO: Configure memory settings
+        Uses Mem0 Platform hosted service at api.mem0.ai.
+        Requires only MEM0_API_KEY from environment.
         """
         try:
-            self.client = Memory(api_key=self.api_key)
-            logger.info("Connected to Mem0")
+            # Mem0 Platform (cloud) version - API key only
+            # Hosted service with managed vector store and embeddings
+            self.client = AsyncMemoryClient(api_key=self.api_key)
+            
+            logger.info("✓ Connected to Mem0 Platform (cloud)")
+                
         except Exception as e:
-            logger.error(f"Failed to connect to Mem0: {e}")
+            logger.error(f"Failed to connect to Mem0 Platform: {e}")
             raise
 
     async def disconnect(self):
@@ -73,70 +108,131 @@ class Mem0Client:
 
     async def add_memory(
         self,
-        customer_id: str,
-        content: str,
+        user_id: str,
+        messages: List[Dict[str, str]],
         metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
-        Add new memory for customer.
+        Add new memory for user from conversation messages.
 
         Args:
-            customer_id: Customer identifier
-            content: Memory content (e.g., "Prefers travel insurance with sports coverage")
-            metadata: Optional metadata (e.g., {"type": "preference", "confidence": 0.9})
+            user_id: User identifier
+            messages: List of message dicts with 'role' and 'content' keys
+            metadata: Optional metadata (e.g., {"type": "preference"})
 
         Returns:
-            Memory ID
+            Dict with 'results' containing list of created memories with IDs
 
-        TODO: Implement memory creation
-        TODO: Validate content format
-        TODO: Add timestamp automatically
+        Example:
+            >>> result = await client.add_memory(
+            ...     user_id="alice",
+            ...     messages=[
+            ...         {"role": "user", "content": "I prefer high medical coverage"},
+            ...         {"role": "assistant", "content": "I'll remember that"}
+            ...     ]
+            ... )
+            >>> # Returns: {"results": [{"id": "...", "memory": "...", "event": "ADD"}]}
         """
-        pass
+        if not self.client:
+            await self.connect()
 
-    async def get_memories(
+        try:
+            result = await self.client.add(
+                messages=messages,
+                user_id=user_id,
+                metadata=metadata
+            )
+            logger.info(f"Added {len(result.get('results', []))} memories for user {user_id}")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to add memory for user {user_id}: {e}")
+            raise
+
+    async def get_all_memories(
         self,
-        customer_id: str,
-        filters: Optional[Dict[str, Any]] = None
-    ) -> List[Dict]:
+        user_id: str
+    ) -> List[Dict[str, Any]]:
         """
-        Retrieve all memories for customer.
+        Retrieve all memories for user.
 
         Args:
-            customer_id: Customer identifier
-            filters: Optional filters (e.g., {"type": "preference"})
+            user_id: User identifier
 
         Returns:
-            List of memory objects
+            List of memory objects with id, memory, metadata, created_at
 
-        TODO: Implement memory retrieval
-        TODO: Support filtering by metadata
-        TODO: Sort by relevance or recency
+        Example:
+            >>> memories = await client.get_all_memories("alice")
+            >>> # Returns: [{"id": "...", "memory": "...", "created_at": "..."}]
         """
-        pass
+        if not self.client:
+            await self.connect()
+
+        try:
+            # Mem0 v2 API requires filters parameter
+            result = await self.client.get_all(
+                filters={"user_id": user_id}
+            )
+            
+            # Handle both list and dict responses
+            if isinstance(result, list):
+                memories = result
+            else:
+                memories = result.get('results', result)
+                
+            logger.info(f"Retrieved {len(memories)} memories for user {user_id}")
+            return memories
+        except Exception as e:
+            logger.error(f"Failed to get memories for user {user_id}: {e}")
+            raise
 
     async def search_memories(
         self,
-        customer_id: str,
+        user_id: str,
         query: str,
-        limit: int = 5
-    ) -> List[Dict]:
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
         """
         Search memories using semantic similarity.
 
         Args:
-            customer_id: Customer identifier
+            user_id: User identifier
             query: Search query (e.g., "medical coverage preferences")
-            limit: Maximum memories to return
+            limit: Maximum memories to return (default: 10)
 
         Returns:
-            Most relevant memories
+            Most relevant memories with id, memory, score, metadata
 
-        TODO: Implement semantic search
-        TODO: Return similarity scores
-        TODO: Filter by relevance threshold
+        Example:
+            >>> results = await client.search_memories(
+            ...     user_id="alice",
+            ...     query="food preferences",
+            ...     limit=5
+            ... )
+            >>> # Returns: [{"id": "...", "memory": "...", "score": 0.95}]
         """
-        pass
+        if not self.client:
+            await self.connect()
+
+        try:
+            # Mem0 v2 API requires filters parameter
+            result = await self.client.search(
+                query=query,
+                filters={"user_id": user_id},
+                limit=limit
+            )
+            
+            # Handle both list and dict responses
+            if isinstance(result, list):
+                memories = result
+            else:
+                memories = result.get('results', result)
+                
+            logger.info(f"Found {len(memories)} memories for query '{query}' (user: {user_id})")
+            return memories
+        except Exception as e:
+            logger.error(f"Failed to search memories for user {user_id}: {e}")
+            raise
 
     async def update_memory(
         self,
@@ -156,10 +252,25 @@ class Mem0Client:
         """
         Delete memory by ID.
 
-        TODO: Implement memory deletion
-        TODO: Add soft delete option
+        Args:
+            memory_id: Memory ID to delete
+
+        Returns:
+            True if deleted successfully
+
+        Example:
+            >>> success = await client.delete_memory("892db2ae-06d9-49e5-8b3e-585ef9b85b8e")
         """
-        pass
+        if not self.client:
+            await self.connect()
+
+        try:
+            await self.client.delete(memory_id=memory_id)
+            logger.info(f"Deleted memory {memory_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete memory {memory_id}: {e}")
+            raise
 
     # -------------------------------------------------------------------------
     # Conversation Context (Block 2)
@@ -385,3 +496,92 @@ async def get_mem0() -> Mem0Client:
         _mem0_client = Mem0Client()
         await _mem0_client.connect()
     return _mem0_client
+
+
+# -----------------------------------------------------------------------------
+# Migration Notes: OSS vs Cloud
+# -----------------------------------------------------------------------------
+"""
+Mem0 Cloud vs OSS Differences:
+
+1. INSTALLATION:
+   - Cloud: Uses same package `mem0ai`, but different classes
+   - OSS: Uses `Memory` or `AsyncMemory` classes
+   - Cloud: Uses `MemoryClient` or `AsyncMemoryClient` classes
+
+2. INITIALIZATION:
+   OSS Version (OLD - Not used here):
+   ```python
+   from mem0 import AsyncMemory
+   
+   config = {
+       "vector_store": {
+           "provider": "qdrant",
+           "config": {
+               "host": "localhost",
+               "port": 6333
+           }
+       },
+       "llm": {
+           "provider": "openai",
+           "config": {
+               "model": "gpt-4",
+               "api_key": "sk-..."
+           }
+       },
+       "embedder": {
+           "provider": "openai",
+           "config": {
+               "model": "text-embedding-3-small"
+           }
+       }
+   }
+   
+   client = AsyncMemory(config)
+   ```
+   
+   Cloud Version (CURRENT - What we use):
+   ```python
+   from mem0 import AsyncMemoryClient
+   
+   # Simple initialization - just need API key
+   client = AsyncMemoryClient(api_key="m0-...")
+   ```
+
+3. KEY DIFFERENCES:
+   - Cloud: No need to configure vector stores, LLM, or embeddings
+   - Cloud: Managed infrastructure and automatic scaling
+   - Cloud: Built-in multi-tenancy with user_id isolation
+   - Cloud: Hosted at api.mem0.ai
+   - OSS: Requires local infrastructure (Qdrant, OpenAI API, etc.)
+   - OSS: Self-hosted and self-managed
+
+4. API COMPATIBILITY:
+   - Both versions use similar API methods:
+     * add() / add_memory()
+     * get_all()
+     * search()
+     * delete()
+   - Cloud version is simpler - no config object needed
+   
+5. ENVIRONMENT VARIABLES:
+   Cloud Version (.env):
+   ```
+   MEM0_API_KEY=m0-xxx...
+   ```
+   
+   OSS Version would need:
+   ```
+   QDRANT_HOST=localhost
+   QDRANT_PORT=6333
+   OPENAI_API_KEY=sk-xxx...
+   ```
+
+6. MIGRATION STEPS (if switching from OSS to Cloud):
+   a. Get Mem0 Cloud API key from https://app.mem0.ai
+   b. Update .env file with MEM0_API_KEY
+   c. Change import from `Memory` to `MemoryClient`
+   d. Remove vector_store, llm, embedder config
+   e. Pass only api_key to constructor
+   f. Remove local Qdrant/vector store infrastructure
+"""

@@ -851,27 +851,138 @@ async def analyze_destination_risk(destination: str) -> Dict[str, Any]:
 
 @mcp.tool()
 async def manage_conversation_memory(
-    customer_id: str,
+    user_id: str,
     action: str,
-    data: Dict[str, Any] | None = None
+    messages: list | None = None,
+    query: str | None = None,
+    memory_id: str | None = None,
+    limit: int = 10,
+    metadata: dict | None = None
 ) -> Dict[str, Any]:
     """
-    Manage customer conversation memory.
+    Manage user conversation memory using Mem0.
+
+    Simple memory management - LLM decides what to store and when to retrieve.
+    This tool provides 4 basic operations: add, search, get_all, and delete.
 
     Args:
-        customer_id: Customer ID
-        action: Action to perform (add_memory, get_memories, search_memories)
-        data: Action-specific data
+        user_id: User identifier (required)
+        action: Memory operation - "add", "search", "get_all", or "delete"
+        messages: For "add" - List of conversation messages with 'role' and 'content' keys
+        query: For "search" - Search query for semantic memory search
+        memory_id: For "delete" - Memory ID to delete
+        limit: For "search" - Maximum number of memories to return (default: 10)
+        metadata: For "add" - Optional metadata for categorization
 
     Returns:
-        Memory operation result
+        Operation result with memories or confirmation
 
-    TODO: Implement Mem0 integration
-    TODO: Support different memory operations
-    TODO: Maintain conversation context
+    Examples:
+        Store a conversation:
+        >>> await manage_conversation_memory(
+        ...     user_id="alice_123",
+        ...     action="add",
+        ...     messages=[
+        ...         {"role": "user", "content": "I prefer high medical coverage"},
+        ...         {"role": "assistant", "content": "I'll remember that preference"}
+        ...     ],
+        ...     metadata={"type": "preference"}
+        ... )
+
+        Search for relevant memories:
+        >>> await manage_conversation_memory(
+        ...     user_id="alice_123",
+        ...     action="search",
+        ...     query="insurance preferences",
+        ...     limit=5
+        ... )
+
+        Get all memories:
+        >>> await manage_conversation_memory(
+        ...     user_id="alice_123",
+        ...     action="get_all"
+        ... )
+
+        Delete a memory:
+        >>> await manage_conversation_memory(
+        ...     user_id="alice_123",
+        ...     action="delete",
+        ...     memory_id="892db2ae-06d9-49e5-8b3e-585ef9b85b8e"
+        ... )
+
+    Note:
+        - LLM autonomously decides what conversations to store
+        - Mem0 automatically extracts key information from messages
+        - Semantic search uses AI to find relevant memories by meaning
+        - All operations are specific to the user_id
     """
-    logger.info(f"Managing memory for customer {customer_id}: {action}")
-    return {"error": "Not implemented"}
+    logger.info(f"Managing memory for user {user_id}: action={action}")
+
+    try:
+        if action == "add":
+            if not messages:
+                return {
+                    "error": "Missing required parameter",
+                    "message": "'messages' parameter is required for 'add' action"
+                }
+
+            result = await backend_client.add_memory(
+                user_id=user_id,
+                messages=messages,
+                metadata=metadata
+            )
+            logger.info(f"Added memories for user {user_id}")
+            return result
+
+        elif action == "search":
+            if not query:
+                return {
+                    "error": "Missing required parameter",
+                    "message": "'query' parameter is required for 'search' action"
+                }
+
+            results = await backend_client.search_memories(
+                user_id=user_id,
+                query=query,
+                limit=limit
+            )
+            logger.info(f"Found {len(results)} memories for user {user_id}")
+            return {
+                "results": results,
+                "total": len(results)
+            }
+
+        elif action == "get_all":
+            results = await backend_client.get_all_memories(user_id=user_id)
+            logger.info(f"Retrieved {len(results)} memories for user {user_id}")
+            return {
+                "results": results,
+                "total": len(results)
+            }
+
+        elif action == "delete":
+            if not memory_id:
+                return {
+                    "error": "Missing required parameter",
+                    "message": "'memory_id' parameter is required for 'delete' action"
+                }
+
+            result = await backend_client.delete_memory(memory_id=memory_id)
+            logger.info(f"Deleted memory {memory_id}")
+            return result
+
+        else:
+            return {
+                "error": "Invalid action",
+                "message": f"Unknown action '{action}'. Valid actions: add, search, get_all, delete"
+            }
+
+    except Exception as e:
+        logger.error(f"Memory operation failed for user {user_id}: {e}")
+        return {
+            "error": str(e),
+            "message": f"Failed to {action} memory. Please try again."
+        }
 
 
 # =============================================================================
