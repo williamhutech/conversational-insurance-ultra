@@ -24,6 +24,7 @@ Or configure in Claude Desktop / ChatGPT:
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from typing import Any, Dict, List
@@ -368,7 +369,30 @@ async def initiate_purchase(
         )
 
         logger.info(f"Purchase initiated: {result.get('payment_intent_id')}")
-        return result
+
+        # Return widget-enabled response for OpenAI Apps SDK
+        # Format amount as currency string (e.g., "150.00" from 15000 cents)
+        formatted_amount = f"{amount / 100:.2f}"
+
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"✅ Payment initiated for {product_name}! Total: {currency} {formatted_amount}\n\nClick 'Pay via Stripe' in the card below to complete your purchase securely."
+                }
+            ],
+            "_meta": {
+                "openai/outputTemplate": f"{os.getenv('WIDGET_BASE_URL', 'http://localhost:8085/widgets')}/payment-widget.html"
+            },
+            "widgetState": {
+                "payment_intent_id": result["payment_intent_id"],
+                "checkout_url": result["checkout_url"],
+                "product_name": product_name,
+                "amount": formatted_amount,
+                "currency": currency,
+                "status": "pending"
+            }
+        }
 
     except Exception as e:
         logger.error(f"Error initiating purchase: {e}")

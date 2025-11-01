@@ -17,6 +17,7 @@ import logging
 from backend.config import settings
 from backend.routers import purchase_router
 from backend.routers.memory import router as memory_router
+from backend.routers.widgets import router as widgets_router
 from backend.services.payment.stripe_webhook import app as webhook_app
 from backend.services.payment.payment_pages import app as pages_app
 
@@ -131,6 +132,9 @@ app.include_router(
 
 # Memory Management (supports all blocks)
 app.include_router(memory_router)
+
+# Widget Router - Serves OpenAI Apps SDK widgets
+app.include_router(widgets_router)
 
 # Mount Payment Webhook Handler (separate FastAPI app for isolation)
 app.mount("/webhook", webhook_app)

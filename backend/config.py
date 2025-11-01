@@ -107,6 +107,10 @@ class Settings(BaseSettings):
     payment_success_url: str = "http://localhost:8085/success"
     payment_cancel_url: str = "http://localhost:8085/cancel"
 
+    # Widget Base URL (for OpenAI Apps SDK widgets)
+    widget_base_url: str = "http://localhost:8085/widgets"
+    backend_api_url: str = "http://localhost:8085"
+
     # -----------------------------------------------------------------------------
     # OCR & Document Processing
     # -----------------------------------------------------------------------------
