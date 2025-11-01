@@ -19,6 +19,7 @@ Usage:
 
 from typing import List, Dict, Any, Optional
 from supabase import create_client, Client
+from openai import AsyncOpenAI
 import logging
 
 from backend.config import settings
@@ -42,20 +43,30 @@ class SupabaseClient:
         self.url = settings.supabase_url
         self.key = settings.supabase_service_key  # Use service key for backend
         self.client: Optional[Client] = None
+        self.openai: Optional[AsyncOpenAI] = None
 
     async def connect(self):
         """
-        Establish connection to Supabase.
+        Establish connection to Supabase and OpenAI.
 
         TODO: Implement connection pooling
         TODO: Add connection health check
         TODO: Handle connection timeouts
         """
         try:
+            # Initialize Supabase client
             self.client = create_client(self.url, self.key)
             logger.info("Connected to Supabase")
+
+            # Initialize OpenAI client for embeddings
+            if settings.openai_api_key:
+                self.openai = AsyncOpenAI(
+                    api_key=settings.openai_api_key,
+                    base_url=settings.openai_api_base_url
+                )
+                logger.info("Initialized OpenAI client for embeddings")
         except Exception as e:
-            logger.error(f"Failed to connect to Supabase: {e}")
+            logger.error(f"Failed to connect to Supabase/OpenAI: {e}")
             raise
 
     async def disconnect(self):
@@ -204,6 +215,246 @@ class SupabaseClient:
         TODO: Handle case-insensitive search
         """
         pass
+
+    # -------------------------------------------------------------------------
+    # Vector Search Operations (Travel Insurance Taxonomy)
+    # -------------------------------------------------------------------------
+
+    async def _generate_embedding(self, text: str) -> List[float]:
+        """
+        Generate embedding vector for text using OpenAI.
+
+        Args:
+            text: Input text to embed
+
+        Returns:
+            Embedding vector
+
+        Raises:
+            RuntimeError: If embedding generation fails
+        """
+        if not self.openai:
+            raise RuntimeError("OpenAI client not initialized")
+
+        try:
+            response = await self.openai.embeddings.create(
+                model=settings.default_embedding_model,
+                input=text
+            )
+            embedding = response.data[0].embedding
+            logger.debug(f"Generated embedding with {len(embedding)} dimensions")
+            return embedding
+
+        except Exception as e:
+            logger.error(f"Failed to generate embedding: {e}")
+            raise RuntimeError(f"Embedding generation failed: {e}")
+
+    async def search_general_conditions(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
+        """
+        Search general_conditions table using vector similarity.
+
+        Searches Layer 1: Policy-wide eligibility & exclusions.
+
+        Args:
+            query: Natural language search query
+            top_k: Number of top results to return
+
+        Returns:
+            List of dicts with all columns + similarity_score, sorted by similarity
+
+        Raises:
+            RuntimeError: If search fails
+        """
+        if not self.client:
+            await self.connect()
+
+        logger.info(f"Searching general_conditions: '{query}' (top_k={top_k})")
+
+        try:
+            # Generate query embedding
+            query_embedding = await self._generate_embedding(query)
+
+            # Execute vector search
+            # Use direct SQL query for flexibility with cosine distance operator
+            response = self.client.rpc(
+                'search_general_conditions_vector',
+                {
+                    'query_embedding': query_embedding,
+                    'match_count': top_k
+                }
+            ).execute()
+
+            if not response.data:
+                logger.info("No results found in general_conditions")
+                return []
+
+            # Add table identifier to results
+            results = []
+            for row in response.data:
+                result = dict(row)
+                result['table'] = 'general_conditions'
+                results.append(result)
+
+            logger.info(f"Found {len(results)} results in general_conditions")
+            return results
+
+        except Exception as e:
+            logger.error(f"Search failed on general_conditions: {e}")
+            raise RuntimeError(f"Failed to search general_conditions: {e}")
+
+    async def search_benefits(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
+        """
+        Search benefits table using vector similarity.
+
+        Searches Layer 2: Available coverages and benefits.
+
+        Args:
+            query: Natural language search query
+            top_k: Number of top results to return
+
+        Returns:
+            List of dicts with all columns + similarity_score, sorted by similarity
+
+        Raises:
+            RuntimeError: If search fails
+        """
+        if not self.client:
+            await self.connect()
+
+        logger.info(f"Searching benefits: '{query}' (top_k={top_k})")
+
+        try:
+            # Generate query embedding
+            query_embedding = await self._generate_embedding(query)
+
+            # Execute vector search
+            response = self.client.rpc(
+                'search_benefits_vector',
+                {
+                    'query_embedding': query_embedding,
+                    'match_count': top_k
+                }
+            ).execute()
+
+            if not response.data:
+                logger.info("No results found in benefits")
+                return []
+
+            # Add table identifier to results
+            results = []
+            for row in response.data:
+                result = dict(row)
+                result['table'] = 'benefits'
+                results.append(result)
+
+            logger.info(f"Found {len(results)} results in benefits")
+            return results
+
+        except Exception as e:
+            logger.error(f"Search failed on benefits: {e}")
+            raise RuntimeError(f"Failed to search benefits: {e}")
+
+    async def search_benefit_conditions(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
+        """
+        Search benefit_conditions table using vector similarity.
+
+        Searches Layer 3: Benefit-specific requirements & exclusions.
+
+        Args:
+            query: Natural language search query
+            top_k: Number of top results to return
+
+        Returns:
+            List of dicts with all columns + similarity_score, sorted by similarity
+
+        Raises:
+            RuntimeError: If search fails
+        """
+        if not self.client:
+            await self.connect()
+
+        logger.info(f"Searching benefit_conditions: '{query}' (top_k={top_k})")
+
+        try:
+            # Generate query embedding
+            query_embedding = await self._generate_embedding(query)
+
+            # Execute vector search
+            response = self.client.rpc(
+                'search_benefit_conditions_vector',
+                {
+                    'query_embedding': query_embedding,
+                    'match_count': top_k
+                }
+            ).execute()
+
+            if not response.data:
+                logger.info("No results found in benefit_conditions")
+                return []
+
+            # Add table identifier to results
+            results = []
+            for row in response.data:
+                result = dict(row)
+                result['table'] = 'benefit_conditions'
+                results.append(result)
+
+            logger.info(f"Found {len(results)} results in benefit_conditions")
+            return results
+
+        except Exception as e:
+            logger.error(f"Search failed on benefit_conditions: {e}")
+            raise RuntimeError(f"Failed to search benefit_conditions: {e}")
+
+    async def search_original_text(self, query: str, top_k: int = 10) -> List[str]:
+        """
+        Search original policy text using vector similarity.
+
+        Searches chunked original policy documents to find semantically similar text.
+        Returns only the text content as a list of strings.
+
+        Args:
+            query: Natural language search query
+            top_k: Number of top text chunks to return
+
+        Returns:
+            List of text strings, sorted by similarity descending
+
+        Raises:
+            RuntimeError: If search fails
+        """
+        if not self.client:
+            await self.connect()
+
+        logger.info(f"Searching original_text: '{query}' (top_k={top_k})")
+
+        try:
+            # Generate query embedding
+            query_embedding = await self._generate_embedding(query)
+
+            # Execute vector search using the existing RPC function
+            response = self.client.rpc(
+                'search_similar_original_text',
+                {
+                    'query_embedding': query_embedding,
+                    'match_count': top_k,
+                    'filter_product': None  # Search across all products
+                }
+            ).execute()
+
+            if not response.data:
+                logger.info("No results found in original_text")
+                return []
+
+            # Extract just the text content from each result
+            text_list = [row['text'] for row in response.data if 'text' in row]
+
+            logger.info(f"Found {len(text_list)} text chunks in original_text")
+            return text_list
+
+        except Exception as e:
+            logger.error(f"Search failed on original_text: {e}")
+            raise RuntimeError(f"Failed to search original_text: {e}")
 
 
 # Global client instance (optional)

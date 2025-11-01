@@ -65,10 +65,10 @@ class Settings(BaseSettings):
     # -----------------------------------------------------------------------------
     # Database: Neo4j (Graph Database)
     # -----------------------------------------------------------------------------
-    neo4j_uri: str = Field(..., description="Neo4j connection URI")
-    neo4j_user: str = "neo4j"
-    neo4j_password: str = Field(..., description="Neo4j password")
-    neo4j_database: str = "neo4j"
+    neo4j_policy_uri: str = Field(..., description="Neo4j connection URI")
+    neo4j_policy_username: str = "neo4j"
+    neo4j_policy_password: str = Field(..., description="Neo4j password")
+    neo4j_policy_database: str = "neo4j"
 
     # -----------------------------------------------------------------------------
     # Database: DynamoDB (Payment Records)
@@ -91,6 +91,7 @@ class Settings(BaseSettings):
     # -----------------------------------------------------------------------------
     anthropic_api_key: str = Field(..., description="Anthropic Claude API key")
     openai_api_key: str | None = None
+    openai_api_base_url: str = "https://api.openai.com/v1/"
 
     default_llm_model: str = "claude-3-5-sonnet-20241022"
     default_embedding_model: str = "text-embedding-3-small"

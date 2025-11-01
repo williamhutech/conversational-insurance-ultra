@@ -1010,6 +1010,317 @@ async def manage_conversation_memory(
 
 
 # =============================================================================
+# Neo4j Concept Search Tool
+# =============================================================================
+
+@mcp.tool()
+async def search_neo4j_concept(query: str, top_k: int = 15) -> str:
+    """
+    Search insurance concepts in Neo4j using semantic similarity.
+
+    This tool searches the Neo4j knowledge graph for insurance concepts that are
+    semantically similar to your query. It uses MemOS TreeTextMemory with OpenAI
+    embeddings to find the most relevant concept nodes.
+
+    Perfect for:
+    - Understanding insurance terminology and concepts
+    - Finding related coverage information
+    - Exploring policy features and benefits
+    - Learning about insurance products
+
+    Args:
+        query: Natural language search query about insurance concepts
+               (e.g., "travel insurance for China", "medical coverage benefits")
+        top_k: Number of top results to return (1-50, default: 15)
+
+    Returns:
+        String containing concatenated concept memories from Neo4j.
+        Each concept includes detailed information about insurance terms,
+        coverage details, and policy features.
+
+    Example usage:
+        Customer: "I want to travel to China, please recommend insurance for me"
+        >>> results = await search_neo4j_concept(
+        ...     query="travel insurance for China",
+        ...     top_k=15
+        ... )
+        >>> print(results)
+        # Returns detailed concept information about China travel insurance
+
+    Example usage 2:
+        Customer: "What are the differences between major medical coverage options?"
+        >>> results = await search_neo4j_concept(
+        ...     query="major medical coverage insurance comparison",
+        ...     top_k=10
+        ... )
+        >>> print(results)
+        # Returns comprehensive coverage comparison information
+
+    Note:
+        - Results are filtered to exclude very short concept nodes (< 100 chars)
+        - Uses semantic search, so queries don't need exact keyword matches
+        - Higher top_k values return more results but may include less relevant concepts
+        - Returns "No results found." if no matching concepts exist
+    """
+    logger.info(f"Searching Neo4j concepts: '{query}' (top_k={top_k})")
+
+    try:
+        # Call backend API
+        result = await backend_client.search_neo4j_concept(
+            query=query,
+            top_k=top_k
+        )
+
+        logger.info(f"Found {result.get('count', 0)} concept results")
+
+        # Return the formatted string directly
+        return result.get('results', 'No results found.')
+
+    except Exception as e:
+        logger.error(f"Neo4j concept search failed: {e}")
+        error_message = str(e)
+
+        # Return user-friendly error message
+        return f"Error searching concepts: {error_message}. Please try again or contact support if the issue persists."
+
+
+# =============================================================================
+# Structured Policy Data Search Tool
+# =============================================================================
+
+@mcp.tool()
+async def get_structured_policy_data(query: str, top_k: int = 10) -> str:
+    """
+    Search structured travel insurance policy data with intelligent routing.
+
+    This tool uses AI-powered routing (gpt-4o-mini) to intelligently determine which
+    database table(s) to search based on your query, then performs vector similarity
+    search to find the most relevant policy information.
+
+    WHAT THIS TOOL SEARCHES:
+
+    **Layer 1: General Conditions** (Policy-Wide Rules)
+    - Age restrictions and eligibility requirements
+    - Trip origin requirements (e.g., must start from Singapore)
+    - Pre-existing medical conditions exclusions
+    - Dangerous activities and prohibited destinations
+    - Universal policy exclusions (war, terrorism, pandemic)
+
+    **Layer 2: Benefits** (Coverage & What's Covered)
+    - Medical expenses coverage and limits
+    - Trip cancellation and curtailment benefits
+    - Baggage delay and loss compensation
+    - Personal liability coverage
+    - All available insurance benefits and coverage limits
+
+    **Layer 3: Benefit Conditions** (Specific Requirements)
+    - Time limits for filing claims
+    - Minimum thresholds (e.g., 6+ hours baggage delay)
+    - Documentation and proof requirements
+    - Benefit-specific eligibility and exclusions
+
+    PERFECT FOR:
+    - Understanding specific policy terms and conditions
+    - Comparing coverage across different products
+    - Finding eligibility requirements and exclusions
+    - Learning about claim requirements and documentation
+    - Analyzing benefit limits and sub-limits
+
+    Args:
+        query: Natural language question about travel insurance policies
+               Examples:
+               - "What are the age restrictions for travel insurance?"
+               - "Compare medical coverage limits across all policies"
+               - "How long must baggage be delayed to claim compensation?"
+               - "What conditions exclude pre-existing medical issues?"
+        top_k: Number of top results to return per table (1-50, default: 10)
+
+    Returns:
+        JSON-formatted string containing:
+        - success: Boolean status
+        - tables_searched: Which layer(s) were searched
+        - total_results: Number of results found
+        - data: Array of policy data with all fields and similarity scores
+
+    Example usage 1 (Layer 1 - Eligibility):
+        Query: "What are the age restrictions for purchasing travel insurance?"
+        >>> results = await get_structured_policy_data(
+        ...     query="age restrictions travel insurance",
+        ...     top_k=5
+        ... )
+        # Returns general_conditions data about age eligibility
+
+    Example usage 2 (Layer 2 - Benefits):
+        Query: "What medical expenses are covered and what are the limits?"
+        >>> results = await get_structured_policy_data(
+        ...     query="medical expenses coverage limits",
+        ...     top_k=10
+        ... )
+        # Returns benefits data about medical coverage
+
+    Example usage 3 (Layer 3 - Requirements):
+        Query: "What documentation do I need to claim for lost baggage?"
+        >>> results = await get_structured_policy_data(
+        ...     query="baggage loss claim documentation requirements",
+        ...     top_k=5
+        ... )
+        # Returns benefit_conditions data about baggage claims
+
+    Example usage 4 (Multi-layer):
+        Query: "Tell me everything about trip cancellation coverage"
+        >>> results = await get_structured_policy_data(
+        ...     query="trip cancellation coverage complete information",
+        ...     top_k=15
+        ... )
+        # Searches multiple tables and combines results
+
+    Note:
+        - The AI routing is intelligent and context-aware
+        - Results include similarity scores for relevance ranking
+        - Returns empty data array if no matching policies found
+        - All original policy text and structured data included
+        - Results are automatically sorted by relevance
+    """
+    logger.info(f"Searching structured policy data: '{query}' (top_k={top_k})")
+
+    try:
+        # Call backend API
+        result = await backend_client.search_structured_policy(
+            query=query,
+            top_k=top_k
+        )
+
+        logger.info(f"Found {result.get('total_results', 0)} structured policy results")
+
+        # Format as JSON string for Claude/ChatGPT
+        import json
+        return json.dumps(result, indent=2, ensure_ascii=False)
+
+    except Exception as e:
+        logger.error(f"Structured policy search failed: {e}")
+        error_message = str(e)
+
+        # Return user-friendly error in JSON format
+        error_response = {
+            "success": False,
+            "error": error_message,
+            "message": "Failed to search policy data. The routing service may have failed after multiple attempts, or the database may be unavailable. Please rephrase your question or try again."
+        }
+        return json.dumps(error_response, indent=2)
+
+
+# =============================================================================
+# Original Policy Text Search Tool
+# =============================================================================
+
+@mcp.tool()
+async def get_original_text_data(query: str, top_k: int = 10) -> str:
+    """
+    Search original policy text documents using semantic similarity.
+
+    This tool searches through chunked original policy documents (in 16+ languages)
+    to find text passages that are most relevant to your query. Returns the actual
+    policy wording directly from source documents.
+
+    USE THIS WHEN:
+    - You need exact policy wording and original language
+    - You want to quote specific policy terms
+    - You need detailed explanations from the source documents
+    - You're looking for specific clauses or conditions in original format
+
+    DIFFERENT FROM STRUCTURED DATA:
+    - structured policy data → normalized, comparable data across products
+    - original text → actual policy wording, preserves original language
+
+    Args:
+        query: Natural language search query about policy content
+               Examples:
+               - "What does the policy say about pre-existing conditions?"
+               - "Original text about medical coverage limits"
+               - "Policy wording for trip cancellation due to illness"
+               - "Exact terms for baggage delay compensation"
+        top_k: Number of text chunks to return (1-50, default: 10)
+
+    Returns:
+        Concatenated string of relevant policy text chunks, separated by
+        "---" dividers. Each chunk is a portion of original policy text
+        ranked by semantic similarity to your query.
+
+    Example usage 1:
+        Query: "What's the exact policy wording about pre-existing conditions?"
+        >>> text = await get_original_text_data(
+        ...     query="pre-existing conditions exact policy wording",
+        ...     top_k=5
+        ... )
+        # Returns 5 most relevant text chunks about pre-existing conditions
+
+    Example usage 2:
+        Query: "Show me the original text about trip cancellation coverage"
+        >>> text = await get_original_text_data(
+        ...     query="trip cancellation coverage original text",
+        ...     top_k=10
+        ... )
+        # Returns 10 text chunks with cancellation policy wording
+
+    Example usage 3:
+        Query: "What does the policy actually say about dangerous activities?"
+        >>> text = await get_original_text_data(
+        ...     query="dangerous activities policy wording exclusions",
+        ...     top_k=8
+        ... )
+        # Returns relevant text about activity exclusions
+
+    Note:
+        - Text is chunked for efficient search (typical chunk: 500-2000 chars)
+        - Results are ranked by semantic similarity using embeddings
+        - May include text from multiple policy documents
+        - Preserves original policy language and formatting
+        - Returns "No matching text found" if query has no results
+        - Chunks are separated by "\\n\\n---\\n\\n" for readability
+    """
+    logger.info(f"Searching original policy text: '{query}' (top_k={top_k})")
+
+    try:
+        # Import here to avoid circular dependencies
+        from backend.database.postgres_client import get_supabase
+
+        # Get Supabase client and search
+        supabase_client = await get_supabase()
+        text_chunks = await supabase_client.search_original_text(query, top_k)
+
+        if not text_chunks:
+            logger.info("No original text results found")
+            return "No matching text found for your query. Try rephrasing or using different keywords."
+
+        logger.info(f"Found {len(text_chunks)} original text chunks")
+
+        # Concatenate text chunks with separators for readability
+        formatted_text = "\n\n---\n\n".join(text_chunks)
+
+        # Add header with context
+        result = f"Found {len(text_chunks)} relevant policy text passage(s):\n\n{formatted_text}"
+
+        return result
+
+    except RuntimeError as e:
+        # Search-specific error
+        logger.error(f"Original text search failed: {e}")
+        error_message = str(e)
+        return f"Error: Failed to search original policy text. {error_message}\n\nThis may be due to:\n- Database connection issue\n- Missing embeddings in the database\n- Invalid query format\n\nPlease try again or contact support."
+
+    except ConnectionError as e:
+        # Database connection error
+        logger.error(f"Database connection failed: {e}")
+        return f"Error: Could not connect to the policy database. Please try again later.\n\nDetails: {str(e)}"
+
+    except Exception as e:
+        # Unexpected error
+        logger.error(f"Unexpected error in original text search: {e}", exc_info=True)
+        error_message = str(e)
+        return f"Error: An unexpected error occurred while searching policy text.\n\nDetails: {error_message}\n\nPlease try rephrasing your query or contact support if the issue persists."
+
+
+# =============================================================================
 # Server Entry Point
 # =============================================================================
 

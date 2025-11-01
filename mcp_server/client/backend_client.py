@@ -596,6 +596,93 @@ class BackendClient:
             logger.error(f"Error deleting memory: {e}")
             raise
 
+    # -------------------------------------------------------------------------
+    # Neo4j Concept Search
+    # -------------------------------------------------------------------------
+
+    async def search_neo4j_concept(
+        self,
+        query: str,
+        top_k: int = 15
+    ) -> Dict[str, Any]:
+        """
+        Search Neo4j insurance concepts using semantic similarity.
+
+        Uses MemOS TreeTextMemory for intelligent concept retrieval
+        from the Neo4j knowledge graph.
+
+        Args:
+            query: Natural language search query
+            top_k: Number of top results to return (1-50)
+
+        Returns:
+            Dict with 'results' (concatenated string), 'count', and 'query'
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        try:
+            response = await self.client.post(
+                "/api/v1/concept-search",
+                json={
+                    "query": query,
+                    "top_k": top_k
+                }
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPError as e:
+            logger.error(f"Error searching Neo4j concepts: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response body: {e.response.text}")
+            raise
+
+    # -------------------------------------------------------------------------
+    # Structured Policy Search
+    # -------------------------------------------------------------------------
+
+    async def search_structured_policy(
+        self,
+        query: str,
+        top_k: int = 10
+    ) -> Dict[str, Any]:
+        """
+        Search structured policy data with intelligent routing.
+
+        Uses LLM-based routing to determine which Supabase table(s) to search
+        (general_conditions, benefits, benefit_conditions) and performs
+        vector similarity search.
+
+        Args:
+            query: Natural language search query
+            top_k: Number of top results to return per table (1-50)
+
+        Returns:
+            Dict with 'success', 'data', 'tables_searched', 'total_results', 'query'
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        try:
+            response = await self.client.post(
+                "/api/v1/structured-policy-search",
+                json={
+                    "query": query,
+                    "top_k": top_k
+                }
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPError as e:
+            logger.error(f"Error searching structured policy data: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response body: {e.response.text}")
+            raise
+
 
 # Global client instance
 _backend_client: Optional[BackendClient] = None

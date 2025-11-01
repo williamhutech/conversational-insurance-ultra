@@ -214,19 +214,31 @@ class TaxonomyLoader:
                     print(f"⚠️  Product not found: {product_name}")
                     continue
 
-                # Convert coverage_limit to JSONB-compatible format
-                coverage_limit = self._normalize_coverage_limit(product_data.coverage_limit)
+                # FIXED: Extract coverage_limit and sub_limits from nested parameters dict
+                # In the JSON, these fields are nested inside product_data.parameters,
+                # not at the top level of product_data
+                raw_coverage_limit = product_data.parameters.get("coverage_limit")
+                sub_limits = product_data.parameters.get("sub_limits", {})
+
+                # FIXED: original_text might not exist in the JSON for benefits
+                # Use getattr with None default to handle missing field
+                original_text = getattr(product_data, "original_text", None)
 
                 # Generate dual embeddings
+                # IMPORTANT: Pass RAW coverage_limit to embedding service (not normalized)
+                # The embedding service's format_coverage_limit expects raw values
                 normalized_emb, original_emb = None, None
                 if self.config.generate_embeddings:
                     normalized_emb, original_emb = await self.embedding_service.generate_dual_embeddings_for_benefit(
                         benefit_name=benefit_name,
-                        coverage_limit=coverage_limit,
-                        sub_limits=product_data.sub_limits,
+                        coverage_limit=raw_coverage_limit,  # Pass raw value, not normalized
+                        sub_limits=sub_limits,
                         parameters=product_data.parameters,
-                        original_text=product_data.original_text
+                        original_text=original_text
                     )
+
+                # Convert coverage_limit to JSONB-compatible format for database storage
+                coverage_limit_normalized = self._normalize_coverage_limit(raw_coverage_limit)
 
                 # Prepare record
                 record = {
@@ -234,10 +246,10 @@ class TaxonomyLoader:
                     "product_name": product_name,
                     "benefit_name": benefit_name,
                     "benefit_exist": product_data.benefit_exist,
-                    "coverage_limit": coverage_limit,
-                    "sub_limits": product_data.sub_limits,
+                    "coverage_limit": coverage_limit_normalized,
+                    "sub_limits": sub_limits,
                     "parameters": product_data.parameters,
-                    "original_text": product_data.original_text,
+                    "original_text": original_text,
                     "normalized_embedding": normalized_emb,
                     "original_embedding": original_emb,
                 }
