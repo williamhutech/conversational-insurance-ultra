@@ -1,8 +1,22 @@
 {
   "permissions": {
     "allow": [
-      "Read(//Users/zhongyitong/Library/**)",
-      "Bash(tree:*)"
+      "Read(//Users/williamhu/Documents/Initiatives/**)",
+      "Read(//Users/williamhu/Downloads/ancileo-msig-main/Payments/**)",
+      "Bash(tree:*)",
+      "Bash(gh auth:*)",
+      "Bash(gh repo clone:*)",
+      "Bash(git fetch:*)",
+      "Bash(git pull:*)",
+      "Bash(python3:*)",
+      "Bash(pip freeze:*)",
+      "Bash(echo:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git checkout:*)",
+      "Bash(find:*)",
+      "Bash(git merge:*)"
     ],
     "deny": [],
     "ask": []

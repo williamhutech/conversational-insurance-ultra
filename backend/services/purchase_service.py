@@ -1,0 +1,424 @@
+"""
+Purchase Service
+
+Orchestrates the complete purchase flow including payment processing.
+Coordinates between DynamoDB payment records, Stripe checkout sessions,
+and policy generation after successful payment.
+
+Usage:
+    from backend.services.purchase_service import PurchaseService
+
+    service = PurchaseService()
+    checkout_result = await service.initiate_payment(user_id, quote_id, ...)
+    status = await service.check_payment_status(payment_intent_id)
+    policy = await service.complete_purchase_after_payment(payment_intent_id)
+"""
+
+import logging
+import uuid
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+
+from backend.database.dynamodb_client import DynamoDBClient
+from backend.services.stripe_integration import StripeService
+from backend.models.payment import (
+    PaymentRecord,
+    PaymentInitiation,
+    PaymentConfirmation,
+    StripeCheckoutResponse
+)
+from backend.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+class PurchaseService:
+    """
+    Service for managing insurance policy purchases and payments.
+
+    Orchestrates:
+    - Payment record creation in DynamoDB
+    - Stripe checkout session generation
+    - Payment status tracking
+    - Policy generation after successful payment
+
+    Flow:
+    1. User requests to purchase a quote
+    2. Create payment record in DynamoDB (status: pending)
+    3. Create Stripe checkout session
+    4. Return checkout URL to user
+    5. User completes payment (Stripe webhook updates DynamoDB)
+    6. Complete purchase and generate policy document
+    """
+
+    def __init__(self):
+        """Initialize purchase service with database and payment clients."""
+        self.dynamodb_client = DynamoDBClient()
+        self.stripe_service = StripeService()
+
+    async def initiate_payment(
+        self,
+        user_id: str,
+        quote_id: str,
+        amount: int,
+        currency: str,
+        product_name: str,
+        customer_email: Optional[str] = None,
+        metadata: Optional[Dict[str, str]] = None
+    ) -> StripeCheckoutResponse:
+        """
+        Initiate payment process for an insurance policy purchase.
+
+        This is the main entry point for starting a purchase. It:
+        1. Generates a unique payment intent ID
+        2. Creates a payment record in DynamoDB with status "pending"
+        3. Creates a Stripe checkout session
+        4. Returns the checkout URL for the user to complete payment
+
+        Args:
+            user_id: User identifier
+            quote_id: Quote identifier to purchase
+            amount: Amount in cents (e.g., 15000 = $150.00)
+            currency: Currency code (e.g., "SGD")
+            product_name: Product description (e.g., "Premium Travel Insurance")
+            customer_email: Optional email for pre-filling Stripe checkout
+            metadata: Additional metadata to attach to payment
+
+        Returns:
+            StripeCheckoutResponse with:
+            - payment_intent_id: Unique payment identifier
+            - checkout_url: Stripe checkout URL for user
+            - session_id: Stripe session identifier
+            - expires_at: Session expiration time
+
+        Raises:
+            Exception: If payment creation or Stripe session creation fails
+
+        TODO: Add validation for quote_id existence
+        TODO: Add duplicate payment detection
+        TODO: Add payment amount limits
+        """
+        try:
+            # Generate unique payment intent ID
+            payment_intent_id = f"pi_{uuid.uuid4().hex}"
+
+            logger.info(f"Initiating payment for user {user_id}, quote {quote_id}")
+
+            # Step 1: Create payment record in DynamoDB
+            payment_record = await self.dynamodb_client.create_payment(
+                payment_intent_id=payment_intent_id,
+                user_id=user_id,
+                quote_id=quote_id,
+                amount=amount,
+                currency=currency,
+                product_name=product_name,
+                metadata=metadata or {}
+            )
+
+            logger.info(f"Created payment record: {payment_intent_id}")
+
+            # Step 2: Create Stripe checkout session
+            stripe_session = await self.stripe_service.create_checkout_session(
+                payment_intent_id=payment_intent_id,
+                amount=amount,
+                product_name=product_name,
+                customer_email=customer_email,
+                metadata={
+                    "user_id": user_id,
+                    "quote_id": quote_id,
+                    **(metadata or {})
+                }
+            )
+
+            # Step 3: Update payment record with Stripe session ID
+            await self.dynamodb_client.update_payment_status(
+                payment_intent_id=payment_intent_id,
+                payment_status="pending",
+                stripe_session_id=stripe_session["session_id"]
+            )
+
+            logger.info(
+                f"Created Stripe checkout session {stripe_session['session_id']} "
+                f"for payment {payment_intent_id}"
+            )
+
+            # Return checkout details
+            return StripeCheckoutResponse(
+                payment_intent_id=payment_intent_id,
+                checkout_url=stripe_session["checkout_url"],
+                session_id=stripe_session["session_id"],
+                amount=amount,
+                currency=currency,
+                expires_at=stripe_session["expires_at"]
+            )
+
+        except Exception as e:
+            logger.error(f"Error initiating payment: {e}")
+            # If we created a payment record, mark it as failed
+            if payment_intent_id:
+                try:
+                    await self.dynamodb_client.update_payment_status(
+                        payment_intent_id=payment_intent_id,
+                        payment_status="failed",
+                        failure_reason=str(e)
+                    )
+                except Exception as cleanup_error:
+                    logger.error(f"Error during payment cleanup: {cleanup_error}")
+            raise
+
+    async def check_payment_status(
+        self,
+        payment_intent_id: str
+    ) -> Dict[str, Any]:
+        """
+        Check the current status of a payment.
+
+        Queries DynamoDB for the payment record and returns its status.
+        Use this to poll payment status or verify completion.
+
+        Args:
+            payment_intent_id: Payment intent identifier
+
+        Returns:
+            Dictionary with:
+            - payment_intent_id: Payment identifier
+            - payment_status: Current status (pending/completed/failed/expired)
+            - stripe_session_id: Stripe session ID if available
+            - amount: Payment amount
+            - currency: Payment currency
+            - created_at: Payment creation time
+            - updated_at: Last update time
+            - stripe_payment_intent: Stripe payment intent ID if completed
+
+        Raises:
+            ValueError: If payment not found
+
+        TODO: Add caching to reduce DynamoDB queries
+        TODO: Add webhook event history
+        """
+        try:
+            payment = await self.dynamodb_client.get_payment(payment_intent_id)
+
+            if not payment:
+                raise ValueError(f"Payment not found: {payment_intent_id}")
+
+            logger.info(f"Payment {payment_intent_id} status: {payment['payment_status']}")
+
+            return {
+                "payment_intent_id": payment["payment_intent_id"],
+                "payment_status": payment["payment_status"],
+                "stripe_session_id": payment.get("stripe_session_id"),
+                "amount": payment["amount"],
+                "currency": payment["currency"],
+                "product_name": payment["product_name"],
+                "user_id": payment["user_id"],
+                "quote_id": payment["quote_id"],
+                "created_at": payment["created_at"],
+                "updated_at": payment["updated_at"],
+                "stripe_payment_intent": payment.get("stripe_payment_intent"),
+                "failure_reason": payment.get("failure_reason")
+            }
+
+        except Exception as e:
+            logger.error(f"Error checking payment status: {e}")
+            raise
+
+    async def complete_purchase_after_payment(
+        self,
+        payment_intent_id: str
+    ) -> Dict[str, Any]:
+        """
+        Complete the purchase after successful payment.
+
+        This is called after payment is confirmed (typically via webhook).
+        Generates the policy document and updates records.
+
+        Args:
+            payment_intent_id: Payment intent identifier
+
+        Returns:
+            Dictionary with:
+            - policy_id: Generated policy identifier
+            - policy_number: Human-readable policy number
+            - status: Purchase completion status
+            - policy_document_url: URL to policy PDF
+
+        Raises:
+            ValueError: If payment not found or not completed
+
+        TODO: Implement policy document generation
+        TODO: Store policy in Supabase policies table
+        TODO: Send confirmation email
+        TODO: Trigger policy activation workflow
+        """
+        try:
+            # Verify payment is completed
+            payment = await self.dynamodb_client.get_payment(payment_intent_id)
+
+            if not payment:
+                raise ValueError(f"Payment not found: {payment_intent_id}")
+
+            if payment["payment_status"] != "completed":
+                raise ValueError(
+                    f"Payment not completed: {payment_intent_id} "
+                    f"(status: {payment['payment_status']})"
+                )
+
+            logger.info(f"Completing purchase for payment {payment_intent_id}")
+
+            # TODO: Generate policy document
+            # For now, return placeholder
+            policy_id = f"pol_{uuid.uuid4().hex[:12]}"
+            policy_number = f"POL-{datetime.now().year}-{uuid.uuid4().hex[:8].upper()}"
+
+            logger.info(f"Generated policy {policy_id} for payment {payment_intent_id}")
+
+            return {
+                "policy_id": policy_id,
+                "policy_number": policy_number,
+                "status": "completed",
+                "payment_intent_id": payment_intent_id,
+                "quote_id": payment["quote_id"],
+                "user_id": payment["user_id"],
+                "amount": payment["amount"],
+                "currency": payment["currency"],
+                "product_name": payment["product_name"],
+                "policy_document_url": None,  # TODO: Generate PDF
+                "created_at": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"Error completing purchase: {e}")
+            raise
+
+    async def cancel_payment(
+        self,
+        payment_intent_id: str,
+        reason: Optional[str] = None
+    ) -> bool:
+        """
+        Cancel a pending payment.
+
+        Updates payment status to "cancelled" and cancels Stripe payment intent
+        if it exists.
+
+        Args:
+            payment_intent_id: Payment intent identifier
+            reason: Optional cancellation reason
+
+        Returns:
+            True if cancelled successfully
+
+        Raises:
+            ValueError: If payment not found or already completed
+
+        TODO: Add refund support for completed payments
+        """
+        try:
+            payment = await self.dynamodb_client.get_payment(payment_intent_id)
+
+            if not payment:
+                raise ValueError(f"Payment not found: {payment_intent_id}")
+
+            if payment["payment_status"] == "completed":
+                raise ValueError(
+                    f"Cannot cancel completed payment: {payment_intent_id}. "
+                    "Use refund instead."
+                )
+
+            logger.info(f"Cancelling payment {payment_intent_id}")
+
+            # Cancel Stripe payment intent if exists
+            stripe_payment_intent = payment.get("stripe_payment_intent")
+            if stripe_payment_intent:
+                await self.stripe_service.cancel_payment_intent(stripe_payment_intent)
+
+            # Update DynamoDB status
+            await self.dynamodb_client.update_payment_status(
+                payment_intent_id=payment_intent_id,
+                payment_status="cancelled",
+                failure_reason=reason or "User cancelled"
+            )
+
+            logger.info(f"Cancelled payment {payment_intent_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error cancelling payment: {e}")
+            raise
+
+    async def get_user_payments(
+        self,
+        user_id: str,
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all payments for a user.
+
+        Args:
+            user_id: User identifier
+            limit: Maximum number of payments to return
+
+        Returns:
+            List of payment records sorted by creation date (newest first)
+
+        TODO: Add pagination support
+        TODO: Add filtering by status
+        """
+        try:
+            payments = await self.dynamodb_client.get_payments_by_user(
+                user_id=user_id,
+                limit=limit
+            )
+
+            logger.info(f"Retrieved {len(payments)} payments for user {user_id}")
+            return payments
+
+        except Exception as e:
+            logger.error(f"Error getting user payments: {e}")
+            raise
+
+    async def get_quote_payment(
+        self,
+        quote_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get payment record for a specific quote.
+
+        Args:
+            quote_id: Quote identifier
+
+        Returns:
+            Payment record if exists, None otherwise
+
+        TODO: Handle multiple payments for same quote
+        """
+        try:
+            payments = await self.dynamodb_client.get_payments_by_quote(quote_id)
+
+            if not payments:
+                return None
+
+            # Return most recent payment
+            return payments[0] if payments else None
+
+        except Exception as e:
+            logger.error(f"Error getting quote payment: {e}")
+            raise
+
+
+# Global service instance (optional)
+_purchase_service: Optional[PurchaseService] = None
+
+
+def get_purchase_service() -> PurchaseService:
+    """
+    Get or create global purchase service instance.
+
+    Returns:
+        PurchaseService: Configured service instance
+    """
+    global _purchase_service
+    if _purchase_service is None:
+        _purchase_service = PurchaseService()
+    return _purchase_service

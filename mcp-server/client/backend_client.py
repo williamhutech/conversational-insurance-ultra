@@ -130,33 +130,188 @@ class BackendClient:
         pass
 
     # -------------------------------------------------------------------------
-    # Block 4: Purchase
+    # Block 4: Purchase & Payment
     # -------------------------------------------------------------------------
 
-    async def initiate_purchase(
+    async def initiate_payment(
         self,
-        quotation_id: str,
-        policy_id: str,
-        customer_details: Dict[str, Any]
+        user_id: str,
+        quote_id: str,
+        amount: int,
+        currency: str,
+        product_name: str,
+        customer_email: Optional[str] = None,
+        metadata: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """
-        Initiate purchase.
+        Initiate payment for a quote.
 
-        TODO: Implement POST /api/v1/purchases/initiate
+        Args:
+            user_id: User identifier
+            quote_id: Quote identifier
+            amount: Amount in cents
+            currency: Currency code (e.g., "SGD")
+            product_name: Product description
+            customer_email: Optional customer email
+            metadata: Optional metadata
+
+        Returns:
+            Payment initiation response with checkout URL
+
+        Raises:
+            httpx.HTTPError: If request fails
         """
-        pass
+        try:
+            response = await self.client.post(
+                "/api/purchase/initiate",
+                json={
+                    "user_id": user_id,
+                    "quote_id": quote_id,
+                    "amount": amount,
+                    "currency": currency,
+                    "product_name": product_name,
+                    "customer_email": customer_email,
+                    "metadata": metadata or {}
+                }
+            )
+            response.raise_for_status()
+            return response.json()
 
-    async def confirm_payment(
+        except httpx.HTTPError as e:
+            logger.error(f"Error initiating payment: {e}")
+            raise
+
+    async def get_payment_status(self, payment_intent_id: str) -> Dict[str, Any]:
+        """
+        Get payment status.
+
+        Args:
+            payment_intent_id: Payment intent identifier
+
+        Returns:
+            Payment status details
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        try:
+            response = await self.client.get(
+                f"/api/purchase/payment/{payment_intent_id}"
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPError as e:
+            logger.error(f"Error getting payment status: {e}")
+            raise
+
+    async def complete_purchase(self, payment_intent_id: str) -> Dict[str, Any]:
+        """
+        Complete purchase after successful payment.
+
+        Args:
+            payment_intent_id: Payment intent identifier
+
+        Returns:
+            Policy details and confirmation
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        try:
+            response = await self.client.post(
+                f"/api/purchase/complete/{payment_intent_id}"
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPError as e:
+            logger.error(f"Error completing purchase: {e}")
+            raise
+
+    async def cancel_payment(
         self,
-        purchase_id: str,
-        payment_intent_id: str
+        payment_intent_id: str,
+        reason: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Confirm payment completion.
+        Cancel a pending payment.
 
-        TODO: Implement POST /api/v1/purchases/{purchase_id}/confirm
+        Args:
+            payment_intent_id: Payment intent identifier
+            reason: Optional cancellation reason
+
+        Returns:
+            Cancellation confirmation
+
+        Raises:
+            httpx.HTTPError: If request fails
         """
-        pass
+        try:
+            response = await self.client.post(
+                f"/api/purchase/cancel/{payment_intent_id}",
+                params={"reason": reason} if reason else None
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPError as e:
+            logger.error(f"Error cancelling payment: {e}")
+            raise
+
+    async def get_user_payments(
+        self,
+        user_id: str,
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        Get payment history for a user.
+
+        Args:
+            user_id: User identifier
+            limit: Maximum results
+
+        Returns:
+            List of payment records
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        try:
+            response = await self.client.get(
+                f"/api/purchase/user/{user_id}/payments",
+                params={"limit": limit}
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPError as e:
+            logger.error(f"Error getting user payments: {e}")
+            raise
+
+    async def get_quote_payment(self, quote_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get payment for a specific quote.
+
+        Args:
+            quote_id: Quote identifier
+
+        Returns:
+            Payment record if exists, None otherwise
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        try:
+            response = await self.client.get(
+                f"/api/purchase/quote/{quote_id}/payment"
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPError as e:
+            logger.error(f"Error getting quote payment: {e}")
+            raise
 
     # -------------------------------------------------------------------------
     # Block 5: Analytics & Recommendations

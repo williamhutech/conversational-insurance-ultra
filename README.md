@@ -97,6 +97,7 @@ An AI-powered conversational insurance platform with **5 Revolutionary Blocks**:
 ### Databases
 - **Supabase** - Postgres + pgvector for normalized policies and embeddings
 - **Neo4j** - Graph database for policy relationships and claims analysis
+- **DynamoDB** - Payment records and transaction history
 - **Mem0** - Customer conversation memory and context management
 
 ### Document Processing
@@ -128,36 +129,29 @@ conversational-insurance-ultra/
 │   ├── main.py                    # FastAPI application
 │   ├── config.py                  # Pydantic settings
 │   ├── dependencies.py            # Dependency injection
-│   ├── api/                       # REST API routers (5 routers)
-│   │   ├── policies.py            # Block 1: Policy Intelligence
-│   │   ├── documents.py           # Block 3: Document upload
-│   │   ├── quotations.py          # Block 3: Quote generation
-│   │   ├── purchases.py           # Block 4: Payment flow
-│   │   └── analytics.py           # Block 5: Recommendations
 │   │
-│   ├── services/                  # Business logic (13 services)
-│   │   ├── policy_ingestion.py
-│   │   ├── policy_normalization.py
-│   │   ├── policy_comparison.py
-│   │   ├── vector_search.py
-│   │   ├── qa_engine.py
-│   │   ├── document_processor.py
-│   │   ├── travel_data_extractor.py
-│   │   ├── quotation_generator.py
-│   │   ├── purchase_service.py
-│   │   ├── stripe_integration.py
-│   │   ├── policy_generator.py
-│   │   ├── claims_analyzer.py
-│   │   └── recommendation_engine.py
+│   ├── routers/                   # REST API routers
+│   │   ├── block_4_purchase.py    # ✅ Block 4: Payment & Purchase
+│   │   └── ...                    # (Other blocks TODO)
 │   │
-│   ├── models/                    # Pydantic models (5 models)
+│   ├── services/                  # Business logic
+│   │   ├── purchase_service.py    # ✅ Purchase orchestration
+│   │   ├── stripe_integration.py  # ✅ Stripe API integration
+│   │   ├── payment/               # ✅ Payment sub-services
+│   │   │   ├── stripe_webhook.py  # Webhook event handler
+│   │   │   └── payment_pages.py   # Success/cancel pages
+│   │   └── ...                    # (Other services TODO)
+│   │
+│   ├── models/                    # Pydantic models
+│   │   ├── payment.py             # ✅ Payment models
 │   │   ├── policy.py
 │   │   ├── document.py
 │   │   ├── quotation.py
 │   │   ├── purchase.py
 │   │   └── claim.py
 │   │
-│   └── database/                  # Database clients (4 clients)
+│   └── database/                  # Database clients
+│       ├── dynamodb_client.py     # ✅ DynamoDB payment records
 │       ├── postgres_client.py     # Supabase Postgres
 │       ├── neo4j_client.py        # Neo4j graph DB
 │       ├── vector_client.py       # pgvector search
@@ -175,6 +169,8 @@ conversational-insurance-ultra/
 │       └── validation.py
 │
 ├── database/                      # 🗄️ Database Setup & Data
+│   ├── dynamodb/                  # ✅ DynamoDB setup
+│   │   └── init_payments_table.py # Create payments table
 │   ├── postgres/
 │   │   ├── schema.sql             # Table definitions
 │   │   └── seed_policies.py       # Load taxonomy JSON
@@ -240,10 +236,11 @@ conversational-insurance-ultra/
 
 5. **Set up databases:**
    ```bash
-   # Start local services (optional)
-   docker-compose up -d neo4j redis
+   # Start local services (Neo4j, Redis, DynamoDB)
+   docker-compose up -d
 
    # Initialize database schemas
+   python -m database.dynamodb.init_payments_table  # Create payments table
    python -m database.postgres.seed_policies
    python -m database.neo4j.seed_graph
    python -m database.vector.init_embeddings
@@ -282,6 +279,174 @@ Open Claude Desktop and start asking about travel insurance!
 
 ---
 
+## Payment Integration
+
+### Complete Payment Flow
+
+The platform includes a full-featured payment system powered by Stripe and DynamoDB:
+
+#### Architecture
+
+```
+Customer → MCP Tool → Backend API → Stripe Checkout → Payment Success → Policy Generation
+                ↓                        ↓
+             DynamoDB ← Webhook Handler ←
+```
+
+#### Components
+
+1. **DynamoDB Payment Records** (`database/dynamodb/`)
+   - Stores payment intent records with status tracking
+   - Global Secondary Indexes for efficient queries by user, quote, and session
+   - Local development with DynamoDB Local (Docker)
+
+2. **Stripe Integration** (`backend/services/stripe_integration.py`)
+   - Creates checkout sessions with 24-hour expiration
+   - Manages payment intents and refunds
+   - Retrieves payment status and session details
+
+3. **Purchase Service** (`backend/services/purchase_service.py`)
+   - Orchestrates complete purchase flow
+   - Creates payment records → Stripe checkout → Policy generation
+   - Handles payment cancellation and status tracking
+
+4. **Webhook Handler** (`backend/services/payment/stripe_webhook.py`)
+   - Listens to Stripe events (completed, failed, expired)
+   - Updates DynamoDB payment status automatically
+   - Signature verification for security
+
+5. **Payment Pages** (`backend/services/payment/payment_pages.py`)
+   - Beautiful success/cancel pages with responsive design
+   - Auto-close for popup window flows
+   - Session ID tracking for confirmation
+
+6. **API Router** (`backend/routers/block_4_purchase.py`)
+   - REST endpoints for payment operations
+   - POST `/api/purchase/initiate` - Create payment
+   - GET `/api/purchase/payment/{id}` - Check status
+   - POST `/api/purchase/complete/{id}` - Generate policy
+   - POST `/api/purchase/cancel/{id}` - Cancel payment
+
+7. **MCP Tools** (`mcp-server/server.py`)
+   - `initiate_purchase()` - Start payment flow
+   - `check_payment_status()` - Poll payment status
+   - `complete_purchase()` - Generate policy after payment
+   - `cancel_payment()` - Cancel pending payment
+
+### Setting Up Payments
+
+#### 1. Configure Stripe
+
+```bash
+# Get your Stripe keys from https://dashboard.stripe.com/test/apikeys
+# Add to .env:
+STRIPE_SECRET_KEY="sk_test_..."
+STRIPE_PUBLISHABLE_KEY="pk_test_..."
+STRIPE_WEBHOOK_SECRET="whsec_..."  # From webhook endpoint setup
+```
+
+#### 2. Start DynamoDB Local
+
+```bash
+# Start DynamoDB and admin UI
+docker-compose up -d dynamodb dynamodb-admin
+
+# Create payments table
+python -m database.dynamodb.init_payments_table
+
+# View tables at: http://localhost:8010
+```
+
+#### 3. Configure Stripe Webhook
+
+1. Go to Stripe Dashboard → Developers → Webhooks
+2. Add endpoint: `http://localhost:8000/webhook/stripe`
+3. Select events: `checkout.session.completed`, `checkout.session.expired`, `payment_intent.payment_failed`
+4. Copy webhook secret to `.env`
+
+For local development, use Stripe CLI:
+```bash
+stripe listen --forward-to localhost:8000/webhook/stripe
+```
+
+#### 4. Test Payment Flow
+
+```python
+# In Claude Desktop, use MCP tools:
+
+# 1. Initiate payment
+result = await initiate_purchase(
+    user_id="user_123",
+    quote_id="quote_456",
+    amount=15000,  # $150.00 in cents
+    currency="SGD",
+    product_name="Premium Travel Insurance - 7 Days Asia",
+    customer_email="customer@example.com"
+)
+# Returns: {"checkout_url": "https://checkout.stripe.com/...", ...}
+
+# 2. User completes payment at checkout_url
+
+# 3. Check payment status (webhook updates automatically)
+status = await check_payment_status(result['payment_intent_id'])
+# Returns: {"payment_status": "completed", ...}
+
+# 4. Generate policy
+policy = await complete_purchase(result['payment_intent_id'])
+# Returns: {"policy_id": "pol_abc123", "policy_number": "POL-2025-...", ...}
+```
+
+### Payment Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/purchase/initiate` | POST | Create payment and Stripe checkout session |
+| `/api/purchase/payment/{id}` | GET | Get payment status and details |
+| `/api/purchase/complete/{id}` | POST | Complete purchase and generate policy |
+| `/api/purchase/cancel/{id}` | POST | Cancel pending payment |
+| `/api/purchase/user/{user_id}/payments` | GET | Get user's payment history |
+| `/api/purchase/quote/{quote_id}/payment` | GET | Get payment for specific quote |
+| `/webhook/stripe` | POST | Stripe webhook event handler |
+| `/success` | GET | Payment success page |
+| `/cancel` | GET | Payment cancel page |
+
+### Database Schema
+
+**DynamoDB `lea-payments-local` Table:**
+```
+Primary Key: payment_intent_id (String)
+
+Attributes:
+- payment_intent_id: Unique identifier (pi_...)
+- user_id: Customer identifier
+- quote_id: Quote being purchased
+- amount: Amount in cents
+- currency: Currency code (SGD, USD)
+- product_name: Product description
+- payment_status: pending | completed | failed | expired | cancelled
+- stripe_session_id: Stripe checkout session ID
+- stripe_payment_intent: Stripe PaymentIntent ID
+- created_at: ISO timestamp
+- updated_at: ISO timestamp
+- metadata: Additional data (JSON)
+- failure_reason: Error message if failed
+
+Global Secondary Indexes:
+- user_id-index: Query payments by user
+- quote_id-index: Query payments by quote
+- stripe_session_id-index: Query by Stripe session
+```
+
+### Security Features
+
+- ✅ Stripe webhook signature verification
+- ✅ HTTPS-only in production
+- ✅ Payment intent idempotency
+- ✅ Session expiration (24 hours)
+- ✅ Secure credential management via environment variables
+
+---
+
 ## API Documentation
 
 Once the backend is running, visit:
@@ -294,7 +459,7 @@ Once the backend is running, visit:
 
 ### Project Status
 
-**Current Phase:** Architecture Setup (v0.1.0)
+**Current Phase:** Architecture Setup + Payment Integration (v0.2.0)
 
 This repository contains the complete architecture scaffolding with:
 - ✅ Directory structure
@@ -303,9 +468,15 @@ This repository contains the complete architecture scaffolding with:
 - ✅ Pydantic models
 - ✅ FastAPI application skeleton
 - ✅ FastMCP server skeleton
-- ⏳ Business logic implementations (TODO)
-- ⏳ API endpoint implementations (TODO)
-- ⏳ Service layer implementations (TODO)
+- ✅ **Block 4: Complete payment integration (NEW)**
+  - ✅ DynamoDB payment records
+  - ✅ Stripe checkout integration
+  - ✅ Webhook handler
+  - ✅ Payment pages (success/cancel)
+  - ✅ Purchase service orchestration
+  - ✅ MCP payment tools
+  - ✅ API payment endpoints
+- ⏳ Blocks 1-3, 5: Business logic implementations (TODO)
 
 ### Next Steps
 

@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Conversational Finance** is an AI-powered conversational insurance platform that transforms how customers discover, compare, and purchase travel insurance through natural language conversations on Claude/ChatGPT using the Model Context Protocol (MCP).
+**Conversational Insurance Ultra** is an AI-powered conversational insurance platform that transforms how customers discover, compare, and purchase travel insurance through natural language conversations on Claude/ChatGPT using the Model Context Protocol (MCP).
 
 **Key Innovation:** Block 3 enables customers to upload flight booking documents instead of filling forms, reducing quote time from 20 minutes to 2 minutes through OCR and AI extraction.
 
-**Current Status:** Architecture is 100% defined and documented. Implementation is 41% complete - project scaffolding, configurations, data models, and interfaces are done, but business logic implementation is pending.
+**Current Status:** Architecture is 100% defined and documented. Implementation is 65% complete - project scaffolding, configurations, data models, and interfaces are done. **Block 4 (Purchase Execution) is now fully implemented with complete Stripe payment integration, DynamoDB payment records, and webhook processing.**
 
 ## Architecture
 
@@ -33,8 +33,9 @@ Multiple Databases (Supabase, Neo4j, Mem0, Stripe)
 ### Multi-Database Strategy
 - **Supabase (Postgres + pgvector)** - Normalized policies, benefits, quotations, embeddings for semantic search
 - **Neo4j** - Graph database for policy relationships and claims analysis
+- **DynamoDB** - Payment records and transaction history (✅ Implemented)
 - **Mem0** - Customer conversation memory and context management
-- **Stripe** - Payment processing
+- **Stripe** - Payment processing (✅ Implemented)
 
 ## Technology Stack
 
@@ -74,8 +75,14 @@ uvicorn backend.main:app --reload
 # Start MCP server
 python -m mcp-server.server
 
-# Start local databases (Neo4j + Redis)
+# Start local databases (Neo4j + Redis + DynamoDB)
 docker-compose up -d
+
+# Initialize DynamoDB payments table
+python -m database.dynamodb.init_payments_table
+
+# View DynamoDB Admin UI
+# Available at http://localhost:8010
 
 # Stop local databases
 docker-compose down
@@ -117,20 +124,30 @@ black . && ruff check . && mypy backend/ mcp-server/
 ## Project Structure
 
 ```
-conversational-finance/
+conversational-insurance-ultra/
 ├── backend/                    # FastAPI Backend (Business Logic)
 │   ├── main.py                 # FastAPI application entry point
 │   ├── config.py               # Pydantic settings configuration (122 env vars)
 │   ├── dependencies.py         # Dependency injection setup
-│   ├── api/                    # REST API routers (5 routers - mostly placeholders)
-│   ├── services/               # Business logic (13 services - need implementation)
-│   ├── models/                 # Pydantic models (5 complete models)
+│   ├── routers/                # REST API routers
+│   │   ├── block_4_purchase.py # ✅ Block 4: Payment & Purchase (COMPLETE)
+│   │   └── ...                 # (Other blocks TODO)
+│   ├── services/               # Business logic
+│   │   ├── purchase_service.py # ✅ Purchase orchestration (COMPLETE)
+│   │   ├── stripe_integration.py # ✅ Stripe API integration (COMPLETE)
+│   │   ├── payment/            # ✅ Payment sub-services (COMPLETE)
+│   │   │   ├── stripe_webhook.py # Webhook event handler
+│   │   │   └── payment_pages.py  # Success/cancel pages
+│   │   └── ...                 # (Other services TODO)
+│   ├── models/                 # Pydantic models (6 complete models)
+│   │   ├── payment.py          # ✅ Payment models (COMPLETE)
 │   │   ├── policy.py           # Policy, Benefit, Condition models
 │   │   ├── document.py         # Document upload & extraction models
 │   │   ├── quotation.py        # Quotation request & response models
 │   │   ├── purchase.py         # Purchase & payment models
 │   │   └── claim.py            # Claims analysis models
-│   └── database/               # Database clients (4 client interfaces)
+│   └── database/               # Database clients
+│       ├── dynamodb_client.py  # ✅ DynamoDB payment records (COMPLETE)
 │       ├── postgres_client.py  # Supabase client interface
 │       ├── neo4j_client.py     # Neo4j graph DB client
 │       ├── vector_client.py    # pgvector search client
@@ -149,6 +166,8 @@ conversational-finance/
 │   └── utils/                  # Utilities
 │
 └── database/                   # Database Setup & Data Assets
+    ├── dynamodb/               # ✅ DynamoDB setup (COMPLETE)
+    │   └── init_payments_table.py  # Create payments table script
     ├── policy_wordings/        # 3 source policy PDFs (464KB-1.2MB each)
     ├── supabase/
     │   └── taxonomy/
@@ -175,9 +194,11 @@ The MCP server exposes 12 tools for Claude/ChatGPT integration:
 - `extract_travel_data` - OCR + AI extraction
 - `generate_quotation` - Auto-generate personalized quotes
 
-**Block 4: Purchase** (2 tools)
-- `initiate_purchase` - Start purchase process
-- `process_payment` - Confirm payment and generate policy
+**Block 4: Purchase** (4 tools) ✅ **COMPLETE**
+- `initiate_purchase` - Start purchase process and create Stripe checkout
+- `check_payment_status` - Poll payment status
+- `complete_purchase` - Generate policy after successful payment
+- `cancel_payment` - Cancel pending payment
 
 **Block 5: Analytics** (2 tools)
 - `get_recommendations` - Data-driven coverage suggestions
@@ -186,7 +207,7 @@ The MCP server exposes 12 tools for Claude/ChatGPT integration:
 **Memory Management** (1 tool)
 - `manage_conversation_memory` - Mem0 integration for context
 
-**Current Status:** All tools have signatures in `mcp-server/server.py` but return "Not implemented" - implementations needed in `mcp-server/tools/`.
+**Current Status:** Block 4 tools are fully implemented and functional. Blocks 1-3, 5 tools have signatures but return "Not implemented" - implementations needed.
 
 ## Data Models (Pydantic)
 
@@ -273,28 +294,35 @@ Database schemas are not yet created. Expected tables:
 
 ## Implementation Priorities
 
-The codebase has excellent scaffolding but needs business logic implementation:
+**✅ Phase 0: Payment Integration (COMPLETE - v0.2.0)**
+1. ✅ DynamoDB payment records with GSIs
+2. ✅ Stripe checkout session integration
+3. ✅ Webhook event processing (completed, failed, expired)
+4. ✅ Purchase service orchestration
+5. ✅ Payment API endpoints (9 routes)
+6. ✅ MCP payment tools (4 tools)
+7. ✅ Beautiful success/cancel pages
+8. ✅ Local development environment (DynamoDB Local + Admin UI)
 
-**Phase 1: Database Foundation**
+**Phase 1: Database Foundation (TODO)**
 1. Create Postgres schema and load Taxonomy_Hackathon.json
 2. Define Neo4j graph schema
 3. Generate embeddings for vector search
 
-**Phase 2: Core Services**
+**Phase 2: Core Services (TODO)**
 1. Implement policy ingestion and normalization (`backend/services/policy_service.py`)
 2. Build vector search service (`backend/services/vector_search_service.py`)
 3. Create OCR pipeline (`libs/ocr/` and `backend/services/document_service.py`)
 4. Implement quotation engine (`backend/services/quotation_service.py`)
 
-**Phase 3: API & MCP Integration**
-1. Implement API router handlers (`backend/api/`)
-2. Implement MCP tool handlers (`mcp-server/tools/`)
+**Phase 3: API & MCP Integration (TODO)**
+1. Implement API router handlers for Blocks 1-3, 5
+2. Implement MCP tool handlers for Blocks 1-3, 5
 3. Connect tools to backend API via `backend_client.py`
 
-**Phase 4: Payment & Analytics**
-1. Integrate Stripe payment processing
-2. Implement claims analysis and recommendation system
-3. Load claims data into Neo4j
+**Phase 4: Analytics (TODO)**
+1. Implement claims analysis and recommendation system
+2. Load claims data into Neo4j
 
 ## Key Documentation Files
 
