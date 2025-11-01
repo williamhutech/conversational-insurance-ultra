@@ -1016,51 +1016,41 @@ async def manage_conversation_memory(
 @mcp.tool()
 async def search_neo4j_concept(query: str, top_k: int = 15) -> str:
     """
-    Search insurance concepts in Neo4j using semantic similarity.
+    Search insurance concept knowledge graph for term definitions and contextual understanding.
 
-    This tool searches the Neo4j knowledge graph for insurance concepts that are
-    semantically similar to your query. It uses MemOS TreeTextMemory with OpenAI
-    embeddings to find the most relevant concept nodes.
+    DATA SOURCE: Neo4j knowledge graph with insurance concepts, terminology, and relationships
+    OUTPUT: Detailed concept definitions with contextual information and cross-references
 
-    Perfect for:
-    - Understanding insurance terminology and concepts
-    - Finding related coverage information
-    - Exploring policy features and benefits
-    - Learning about insurance products
+    QUERY CLASSIFICATION - WHEN TO USE THIS TOOL:
+
+    ✓ EXPLANATION QUERIES (PRIMARY) - "What exactly is covered under medical expenses?"
+      → Use FIRST for conceptual understanding and terminology clarification
+      → Provides foundational knowledge before diving into specific policy details
+
+    ✓ SCENARIO ANALYSIS (PRIMARY) - "What happens if I break my leg skiing in Japan?"
+      → Use FIRST to understand relevant concepts (medical coverage, adventure sports, geographical coverage)
+      → Combine with get_structured_policy_data for complete scenario modeling
+
+    ✗ COMPARISON QUERIES - "Which plan has better medical coverage?"
+      → NOT recommended - use get_structured_policy_data instead
+
+    ✗ ELIGIBILITY QUERIES - "Am I covered for pre-existing conditions?"
+      → NOT recommended - use get_structured_policy_data + get_original_text_data instead
+
+    PROCESSING: Semantic search via MemOS TreeTextMemory with OpenAI embeddings
+    FILTERS: Excludes short concept nodes (<100 chars) for quality results
 
     Args:
-        query: Natural language search query about insurance concepts
-               (e.g., "travel insurance for China", "medical coverage benefits")
-        top_k: Number of top results to return (1-50, default: 15)
+        query: Conceptual question about insurance terms, coverage types, or scenarios
+        top_k: Number of concept nodes to return (1-50, default: 15)
 
     Returns:
-        String containing concatenated concept memories from Neo4j.
-        Each concept includes detailed information about insurance terms,
-        coverage details, and policy features.
+        Concatenated concept definitions and explanations from knowledge graph
 
-    Example usage:
-        Customer: "I want to travel to China, please recommend insurance for me"
-        >>> results = await search_neo4j_concept(
-        ...     query="travel insurance for China",
-        ...     top_k=15
-        ... )
-        >>> print(results)
-        # Returns detailed concept information about China travel insurance
-
-    Example usage 2:
-        Customer: "What are the differences between major medical coverage options?"
-        >>> results = await search_neo4j_concept(
-        ...     query="major medical coverage insurance comparison",
-        ...     top_k=10
-        ... )
-        >>> print(results)
-        # Returns comprehensive coverage comparison information
-
-    Note:
-        - Results are filtered to exclude very short concept nodes (< 100 chars)
-        - Uses semantic search, so queries don't need exact keyword matches
-        - Higher top_k values return more results but may include less relevant concepts
-        - Returns "No results found." if no matching concepts exist
+    Examples:
+        "What does 'pre-existing condition' mean in travel insurance?"
+        "Explain adventure sports coverage and exclusions"
+        "What are the types of trip cancellation reasons?"
     """
     logger.info(f"Searching Neo4j concepts: '{query}' (top_k={top_k})")
 
@@ -1091,95 +1081,47 @@ async def search_neo4j_concept(query: str, top_k: int = 15) -> str:
 @mcp.tool()
 async def get_structured_policy_data(query: str, top_k: int = 10) -> str:
     """
-    Search structured travel insurance policy data with intelligent routing.
+    Search normalized taxonomic policy data with AI-powered intelligent routing across 3 layers.
 
-    This tool uses AI-powered routing (gpt-4o-mini) to intelligently determine which
-    database table(s) to search based on your query, then performs vector similarity
-    search to find the most relevant policy information.
+    DATA SOURCE: Normalized taxonomy in Supabase (general_conditions, benefits, benefit_conditions)
+    PROCESSING: gpt-4o-mini routes query → Vector search with OpenAI embeddings → Structured JSON
+    OUTPUT: Side-by-side feature matrices with quantified parameters, coverage limits, and conditions
 
-    WHAT THIS TOOL SEARCHES:
+    QUERY CLASSIFICATION - WHEN TO USE THIS TOOL:
 
-    **Layer 1: General Conditions** (Policy-Wide Rules)
-    - Age restrictions and eligibility requirements
-    - Trip origin requirements (e.g., must start from Singapore)
-    - Pre-existing medical conditions exclusions
-    - Dangerous activities and prohibited destinations
-    - Universal policy exclusions (war, terrorism, pandemic)
+    ✓ COMPARISON QUERIES (PRIMARY) - "Which plan has better medical coverage?"
+      → Use FIRST for structured analysis and side-by-side comparisons
+      → Enables quantified differentiation (e.g., $500k vs $1M coverage)
+      → Fallback: get_original_text_data if structured data insufficient
 
-    **Layer 2: Benefits** (Coverage & What's Covered)
-    - Medical expenses coverage and limits
-    - Trip cancellation and curtailment benefits
-    - Baggage delay and loss compensation
-    - Personal liability coverage
-    - All available insurance benefits and coverage limits
+    ✓ EXPLANATION QUERIES (SECONDARY) - "What exactly is covered under medical expenses?"
+      → Use AFTER search_neo4j_concept for specific policy details
+      → Provides normalized, comparable policy parameters
 
-    **Layer 3: Benefit Conditions** (Specific Requirements)
-    - Time limits for filing claims
-    - Minimum thresholds (e.g., 6+ hours baggage delay)
-    - Documentation and proof requirements
-    - Benefit-specific eligibility and exclusions
+    ✓ ELIGIBILITY QUERIES (PRIMARY) - "Am I covered for pre-existing conditions?"
+      → Use TOGETHER WITH get_original_text_data for comprehensive assessment
+      → Provides normalized rules AND original conditions
 
-    PERFECT FOR:
-    - Understanding specific policy terms and conditions
-    - Comparing coverage across different products
-    - Finding eligibility requirements and exclusions
-    - Learning about claim requirements and documentation
-    - Analyzing benefit limits and sub-limits
+    ✓ SCENARIO ANALYSIS (SECONDARY) - "What happens if I break my leg skiing in Japan?"
+      → Use WITH search_neo4j_concept for complete scenario modeling
+      → Provides specific benefit conditions and exclusions across multiple coverages
+
+    3-LAYER TAXONOMY:
+    • Layer 1 (general_conditions): Age limits, trip requirements, universal exclusions
+    • Layer 2 (benefits): Coverage types, limits, sub-limits across all products
+    • Layer 3 (benefit_conditions): Claim requirements, thresholds, documentation needs
 
     Args:
-        query: Natural language question about travel insurance policies
-               Examples:
-               - "What are the age restrictions for travel insurance?"
-               - "Compare medical coverage limits across all policies"
-               - "How long must baggage be delayed to claim compensation?"
-               - "What conditions exclude pre-existing medical issues?"
-        top_k: Number of top results to return per table (1-50, default: 10)
+        query: Specific policy question requiring structured, comparable data
+        top_k: Results per table (1-50, default: 10)
 
     Returns:
-        JSON-formatted string containing:
-        - success: Boolean status
-        - tables_searched: Which layer(s) were searched
-        - total_results: Number of results found
-        - data: Array of policy data with all fields and similarity scores
+        JSON with success, tables_searched, total_results, data array (includes similarity scores)
 
-    Example usage 1 (Layer 1 - Eligibility):
-        Query: "What are the age restrictions for purchasing travel insurance?"
-        >>> results = await get_structured_policy_data(
-        ...     query="age restrictions travel insurance",
-        ...     top_k=5
-        ... )
-        # Returns general_conditions data about age eligibility
-
-    Example usage 2 (Layer 2 - Benefits):
-        Query: "What medical expenses are covered and what are the limits?"
-        >>> results = await get_structured_policy_data(
-        ...     query="medical expenses coverage limits",
-        ...     top_k=10
-        ... )
-        # Returns benefits data about medical coverage
-
-    Example usage 3 (Layer 3 - Requirements):
-        Query: "What documentation do I need to claim for lost baggage?"
-        >>> results = await get_structured_policy_data(
-        ...     query="baggage loss claim documentation requirements",
-        ...     top_k=5
-        ... )
-        # Returns benefit_conditions data about baggage claims
-
-    Example usage 4 (Multi-layer):
-        Query: "Tell me everything about trip cancellation coverage"
-        >>> results = await get_structured_policy_data(
-        ...     query="trip cancellation coverage complete information",
-        ...     top_k=15
-        ... )
-        # Searches multiple tables and combines results
-
-    Note:
-        - The AI routing is intelligent and context-aware
-        - Results include similarity scores for relevance ranking
-        - Returns empty data array if no matching policies found
-        - All original policy text and structured data included
-        - Results are automatically sorted by relevance
+    Examples:
+        "Compare trip cancellation coverage limits across all policies"
+        "What are the age restrictions for each product?"
+        "Which benefits require 6+ hours delay to claim?"
     """
     logger.info(f"Searching structured policy data: '{query}' (top_k={top_k})")
 
@@ -1216,67 +1158,47 @@ async def get_structured_policy_data(query: str, top_k: int = 10) -> str:
 @mcp.tool()
 async def get_original_text_data(query: str, top_k: int = 10) -> str:
     """
-    Search original policy text documents using semantic similarity.
+    Search chunked original policy documents for exact wording and legal language references.
 
-    This tool searches through chunked original policy documents (in 16+ languages)
-    to find text passages that are most relevant to your query. Returns the actual
-    policy wording directly from source documents.
+    DATA SOURCE: Original policy text chunks (16+ languages) with embeddings in Supabase
+    PROCESSING: Vector similarity search with OpenAI embeddings maintaining legal precision
+    OUTPUT: Exact policy language passages with "---" separators, preserving original formatting
 
-    USE THIS WHEN:
-    - You need exact policy wording and original language
-    - You want to quote specific policy terms
-    - You need detailed explanations from the source documents
-    - You're looking for specific clauses or conditions in original format
+    QUERY CLASSIFICATION - WHEN TO USE THIS TOOL:
 
-    DIFFERENT FROM STRUCTURED DATA:
-    - structured policy data → normalized, comparable data across products
-    - original text → actual policy wording, preserves original language
+    ✓ COMPARISON QUERIES (FALLBACK) - "Which plan has better medical coverage?"
+      → Use ONLY IF get_structured_policy_data returns insufficient data
+      → Provides original wording when normalized data is unclear
+
+    ✓ EXPLANATION QUERIES (TERTIARY) - "What exactly is covered under medical expenses?"
+      → Use LAST after search_neo4j_concept → get_structured_policy_data
+      → Provides exact legal wording and detailed policy language references
+
+    ✓ ELIGIBILITY QUERIES (PRIMARY) - "Am I covered for pre-existing conditions?"
+      → Use TOGETHER WITH get_structured_policy_data for comprehensive assessment
+      → Provides original conditions text for legal precision and qualifying clauses
+
+    ✗ SCENARIO ANALYSIS - "What happens if I break my leg skiing in Japan?"
+      → NOT recommended - use search_neo4j_concept + get_structured_policy_data instead
+      → Original text lacks the structured cross-benefit analysis needed for scenarios
+
+    CHARACTERISTICS:
+    • Chunk size: 500-2000 characters per passage
+    • Multilingual: Preserves original policy language (English, Chinese, Malay, etc.)
+    • Unstructured: Raw policy text, not normalized for comparison
+    • Legal precision: Exact terms and conditions as written in source documents
 
     Args:
-        query: Natural language search query about policy content
-               Examples:
-               - "What does the policy say about pre-existing conditions?"
-               - "Original text about medical coverage limits"
-               - "Policy wording for trip cancellation due to illness"
-               - "Exact terms for baggage delay compensation"
-        top_k: Number of text chunks to return (1-50, default: 10)
+        query: Question requiring exact policy wording or legal language
+        top_k: Number of text chunks (1-50, default: 10)
 
     Returns:
-        Concatenated string of relevant policy text chunks, separated by
-        "---" dividers. Each chunk is a portion of original policy text
-        ranked by semantic similarity to your query.
+        Concatenated passages with "---" separators, ranked by semantic similarity
 
-    Example usage 1:
-        Query: "What's the exact policy wording about pre-existing conditions?"
-        >>> text = await get_original_text_data(
-        ...     query="pre-existing conditions exact policy wording",
-        ...     top_k=5
-        ... )
-        # Returns 5 most relevant text chunks about pre-existing conditions
-
-    Example usage 2:
-        Query: "Show me the original text about trip cancellation coverage"
-        >>> text = await get_original_text_data(
-        ...     query="trip cancellation coverage original text",
-        ...     top_k=10
-        ... )
-        # Returns 10 text chunks with cancellation policy wording
-
-    Example usage 3:
-        Query: "What does the policy actually say about dangerous activities?"
-        >>> text = await get_original_text_data(
-        ...     query="dangerous activities policy wording exclusions",
-        ...     top_k=8
-        ... )
-        # Returns relevant text about activity exclusions
-
-    Note:
-        - Text is chunked for efficient search (typical chunk: 500-2000 chars)
-        - Results are ranked by semantic similarity using embeddings
-        - May include text from multiple policy documents
-        - Preserves original policy language and formatting
-        - Returns "No matching text found" if query has no results
-        - Chunks are separated by "\\n\\n---\\n\\n" for readability
+    Examples:
+        "What is the exact definition of pre-existing condition in the policy?"
+        "Show me the original exclusion text for dangerous activities"
+        "What does the policy document say about trip cancellation refunds?"
     """
     logger.info(f"Searching original policy text: '{query}' (top_k={top_k})")
 
