@@ -2,92 +2,66 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Use context7 mcp to get latest documents and developed based on it
-
 ## Project Overview
 
-**Conversational Insurance Ultra** is an AI-powered conversational insurance platform that transforms how customers discover, compare, and purchase travel insurance through natural language conversations on Claude/ChatGPT using the Model Context Protocol (MCP).
+**Conversational Finance** is an AI-powered conversational insurance platform that enables customers to discover, compare, and purchase travel insurance through natural conversations on Claude/ChatGPT using the Model Context Protocol (MCP).
 
-**Key Innovation:** Block 3 enables customers to upload flight booking documents instead of filling forms, reducing quote time from 20 minutes to 2 minutes through OCR and AI extraction.
-
-**Current Status:** Architecture is 100% defined and documented. Implementation is 65% complete - project scaffolding, configurations, data models, and interfaces are done. **Block 4 (Purchase Execution) is now fully implemented with complete Stripe payment integration, DynamoDB payment records, and webhook processing.**
-
-## Architecture
+**Critical Context:** Always use context7 MCP to fetch the latest documentation for any library before implementation.
 
 ### 3-Tier Architecture
 ```
-Claude/ChatGPT (UI Layer)
+Claude/ChatGPT Client (UI Layer)
         ↓ MCP Protocol
-FastMCP Server (12 Tools)
+FastMCP Server (12 Tools) - mcp_server/
         ↓ HTTP/REST
-FastAPI Backend (Business Logic)
+FastAPI Backend (Business Logic) - backend/
         ↓
-Multiple Databases (Supabase, Neo4j, Mem0, Stripe)
+Multiple Databases (Supabase, Neo4j, Mem0, DynamoDB, Stripe)
 ```
 
-### The 5 Revolutionary Blocks
-1. **Policy Intelligence Engine** - Dual-layer intelligence with normalized taxonomy + original policy text (16+ languages)
-2. **Conversational FAQ & Recommendations** - Natural language Q&A with Mem0 memory
-3. **Document Intelligence & Auto-Quotation** - OCR + AI extraction from travel documents (killer feature)
-4. **Seamless Purchase Execution** - Complete purchase within conversation using Stripe
-5. **Data-Driven Recommendations** - Leveraging proprietary MSIG claims data for competitive advantage
-
-### Multi-Database Strategy
-- **Supabase (Postgres + pgvector)** - Normalized policies, benefits, quotations, embeddings for semantic search
-- **Neo4j** - Graph database for policy relationships and claims analysis
-- **DynamoDB** - Payment records and transaction history (✅ Implemented)
-- **Mem0** - Customer conversation memory and context management
-- **Stripe** - Payment processing (✅ Implemented)
-
-## Technology Stack
-
-- **Python 3.11+** with modern type hints
-- **FastAPI 0.108+** - High-performance async API framework
-- **FastMCP 0.1+** - Model Context Protocol server for Claude/ChatGPT
-- **Pydantic 2.5+** - Data validation and settings management
-- **Document Processing:** Tesseract OCR, EasyOCR, PyPDF, Pillow
-- **AI:** Anthropic Claude (claude-3-5-sonnet-20241022), OpenAI embeddings
-- **Payments:** Stripe 7.8+
+### Implementation Status
+- ✅ **Block 4 (Payment):** Fully implemented - Stripe checkout, DynamoDB payments, webhooks
+- ⏳ **Blocks 1-3, 5:** Scaffolding complete, business logic pending
+- **Database:** Schemas not created yet, data assets ready to load
 
 ## Development Commands
 
-### Setup
+### Setup & Installation
 ```bash
-# Create virtual environment
+# Create virtual environment (Python 3.11+)
 python3.11 -m venv venv
 source venv/bin/activate
 
-# Install dependencies
-pip install -e .
-# or using UV (recommended)
+# Install with UV (recommended - this project uses UV)
 uv pip install -e .
+
+# Or with pip
+pip install -e .
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your API keys and database credentials
+# Edit .env with API keys
 ```
 
 ### Running the Application
 ```bash
-# Start FastAPI backend (with hot reload)
+# Start FastAPI backend (http://localhost:8000)
 uvicorn backend.main:app --reload
-# Available at http://localhost:8000
-# API docs at http://localhost:8000/docs
 
-# Start MCP server
-python -m mcp-server.server
+# Start MCP server (IMPORTANT: use underscore, not hyphen)
+python -m mcp_server.server
 
-# Start local databases (Neo4j + Redis + DynamoDB)
+# Or test with MCP Inspector
+npx @modelcontextprotocol/inspector uv run python -m mcp_server.server
+
+# Start local databases (Neo4j, Redis, DynamoDB)
 docker-compose up -d
 
 # Initialize DynamoDB payments table
 python -m database.dynamodb.init_payments_table
 
 # View DynamoDB Admin UI
-# Available at http://localhost:8010
-
-# Stop local databases
-docker-compose down
+open http://localhost:8010
 ```
 
 ### Testing
@@ -98,259 +72,209 @@ pip install -e ".[dev]"
 # Run all tests
 pytest
 
-# Run with coverage
-pytest --cov=backend --cov=mcp-server
-
-# Run specific test file
+# Run specific test
 pytest tests/test_policies.py
 
-# Run tests matching pattern
-pytest -k "test_policy"
+# Run with coverage
+pytest --cov=backend --cov=mcp_server
+
+# Test pattern matching
+pytest -k "test_payment"
 ```
 
 ### Code Quality
 ```bash
-# Format code with Black
+# Format code
 black .
 
-# Lint with Ruff
+# Lint
 ruff check .
 
-# Type check with MyPy
-mypy backend/ mcp-server/
+# Type check
+mypy backend/ mcp_server/
 
-# Run all quality checks
-black . && ruff check . && mypy backend/ mcp-server/
+# All checks
+black . && ruff check . && mypy backend/ mcp_server/
 ```
 
-## Project Structure
+## Critical Architecture Patterns
 
-```
-conversational-insurance-ultra/
-├── backend/                    # FastAPI Backend (Business Logic)
-│   ├── main.py                 # FastAPI application entry point
-│   ├── config.py               # Pydantic settings configuration (122 env vars)
-│   ├── dependencies.py         # Dependency injection setup
-│   ├── routers/                # REST API routers
-│   │   ├── block_4_purchase.py # ✅ Block 4: Payment & Purchase (COMPLETE)
-│   │   └── ...                 # (Other blocks TODO)
-│   ├── services/               # Business logic
-│   │   ├── purchase_service.py # ✅ Purchase orchestration (COMPLETE)
-│   │   ├── stripe_integration.py # ✅ Stripe API integration (COMPLETE)
-│   │   ├── payment/            # ✅ Payment sub-services (COMPLETE)
-│   │   │   ├── stripe_webhook.py # Webhook event handler
-│   │   │   └── payment_pages.py  # Success/cancel pages
-│   │   └── ...                 # (Other services TODO)
-│   ├── models/                 # Pydantic models (6 complete models)
-│   │   ├── payment.py          # ✅ Payment models (COMPLETE)
-│   │   ├── policy.py           # Policy, Benefit, Condition models
-│   │   ├── document.py         # Document upload & extraction models
-│   │   ├── quotation.py        # Quotation request & response models
-│   │   ├── purchase.py         # Purchase & payment models
-│   │   └── claim.py            # Claims analysis models
-│   └── database/               # Database clients
-│       ├── dynamodb_client.py  # ✅ DynamoDB payment records (COMPLETE)
-│       ├── postgres_client.py  # Supabase client interface
-│       ├── neo4j_client.py     # Neo4j graph DB client
-│       ├── vector_client.py    # pgvector search client
-│       └── mem0_client.py      # Mem0 memory client
-│
-├── mcp-server/                 # FastMCP Server (MCP Tools)
-│   ├── server.py               # Main MCP server with 12 tool signatures
-│   ├── tools/                  # Individual tool implementations (need work)
-│   ├── prompts/                # Prompt templates (need implementation)
-│   └── client/
-│       └── backend_client.py   # Backend API HTTP client interface
-│
-├── libs/                       # Shared Libraries (need implementation)
-│   ├── ocr/                    # OCR implementations
-│   ├── storage/                # Document storage
-│   └── utils/                  # Utilities
-│
-└── database/                   # Database Setup & Data Assets
-    ├── dynamodb/               # ✅ DynamoDB setup (COMPLETE)
-    │   └── init_payments_table.py  # Create payments table script
-    ├── policy_wordings/        # 3 source policy PDFs (464KB-1.2MB each)
-    ├── supabase/
-    │   └── taxonomy/
-    │       └── Taxonomy_Hackathon.json  # 5,484 lines, ready to load
-    └── neo4j/
-        └── claims/
-            └── Claims_Data_DB.pdf       # Proprietary claims data
-```
-
-## FastMCP Server (12 Tools)
-
-The MCP server exposes 12 tools for Claude/ChatGPT integration:
-
-**Block 1: Policy Intelligence** (3 tools)
-- `compare_policies` - Compare multiple policies across criteria
-- `explain_coverage` - Explain specific coverage details
-- `search_policies` - Semantic policy search
-
-**Block 2: Conversational FAQ** (1 tool)
-- `answer_question` - Answer insurance questions with memory
-
-**Block 3: Document Intelligence** (3 tools)
-- `upload_document` - Upload travel documents
-- `extract_travel_data` - OCR + AI extraction
-- `generate_quotation` - Auto-generate personalized quotes
-
-**Block 4: Purchase** (4 tools) ✅ **COMPLETE**
-- `initiate_purchase` - Start purchase process and create Stripe checkout
-- `check_payment_status` - Poll payment status
-- `complete_purchase` - Generate policy after successful payment
-- `cancel_payment` - Cancel pending payment
-
-**Block 5: Analytics** (2 tools)
-- `get_recommendations` - Data-driven coverage suggestions
-- `analyze_destination_risk` - Risk analysis from claims data
-
-**Memory Management** (1 tool)
-- `manage_conversation_memory` - Mem0 integration for context
-
-**Current Status:** Block 4 tools are fully implemented and functional. Blocks 1-3, 5 tools have signatures but return "Not implemented" - implementations needed.
-
-## Data Models (Pydantic)
-
-All data models are fully implemented with proper validation in `backend/models/`:
-
-- **Policy Models** (`policy.py`) - PolicyBase, PolicyBenefit, PolicyCondition, PolicyComparison, PolicySearchQuery/Result
-- **Document Models** (`document.py`) - DocumentUpload, TravelDataExtraction, TravelDataValidation, ExtractedTravelPlan
-- **Quotation Models** (`quotation.py`) - QuotationRequest, QuotationItem, QuotationResponse, QuotationAcceptance
-- **Purchase Models** (`purchase.py`) - Payment flow models
-- **Claim Models** (`claim.py`) - Analytics and recommendations
-
-## Important Architectural Patterns
-
-### 1. Async-First Design
-Use `async`/`await` throughout the codebase. FastAPI, database clients, and HTTP calls are all async.
-
+### 1. MCP Tool Constraints
+**IMPORTANT:** FastMCP does NOT support `**kwargs`:
 ```python
-# All route handlers should be async
+# ❌ WRONG - Will fail in MCP Inspector
+@mcp.tool()
+async def my_tool(**kwargs):
+    pass
+
+# ✅ CORRECT - Use Dict[str, Any] instead
+@mcp.tool()
+async def my_tool(user_info: Dict[str, Any] | None = None):
+    pass
+```
+
+### 2. Async-First Design
+All route handlers, database clients, and HTTP calls must be async:
+```python
 @router.get("/policies/{policy_id}")
 async def get_policy(policy_id: str, service: PolicyService = Depends()):
     return await service.get_policy(policy_id)
 ```
 
-### 2. Pydantic for Everything
-All data validation uses Pydantic models. Configuration uses Pydantic Settings with environment variables.
+### 3. Pydantic Settings & Dependency Injection
+- Configuration: `backend/config.py` uses Pydantic Settings (122 env vars)
+- DI: `backend/dependencies.py` defines all injectable dependencies
+- Models: All data validation uses Pydantic 2.5+ with strict typing
 
-```python
-# backend/config.py uses Pydantic Settings
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env")
-```
-
-### 3. Dependency Injection
-Use FastAPI's dependency injection system for database clients and services.
-
-```python
-# backend/dependencies.py defines all dependencies
-def get_postgres_client() -> PostgresClient:
-    return PostgresClient(settings)
-```
-
-### 4. Dual-Layer Intelligence
-Always store both normalized taxonomy data AND original policy text:
-- **Normalized:** Enables apples-to-apples comparison across policies
-- **Original:** Provides accurate source of truth in 16+ languages
+### 4. Dual-Layer Policy Intelligence
+Critical business requirement - always store BOTH:
+- **Normalized taxonomy data** (Supabase) - enables apples-to-apples comparison
+- **Original policy text** (multi-language) - provides source of truth
 
 ### 5. Feature Flags
-All 5 blocks have feature flags in `.env` for gradual rollout:
+All 5 blocks have `.env` feature flags for gradual rollout:
 - `ENABLE_BLOCK_1_POLICY_INTELLIGENCE=true`
 - `ENABLE_BLOCK_2_FAQ=true`
 - `ENABLE_BLOCK_3_DOCUMENT_INTELLIGENCE=true`
 - `ENABLE_BLOCK_4_PURCHASE=true`
 - `ENABLE_BLOCK_5_ANALYTICS=true`
 
-### 6. Type Safety
-Use Python 3.11+ type hints everywhere. MyPy strict mode is enabled.
+## Module Path Conventions
 
-```python
-from typing import Optional, List
-async def search_policies(query: str, limit: int = 10) -> List[Policy]:
-    ...
+**CRITICAL:** Module paths use underscores, not hyphens:
+- ✅ `python -m mcp_server.server`
+- ❌ `python -m mcp-server.server`
+- ✅ `from mcp_server.client import backend_client`
+- ❌ `from mcp-server.client import backend_client`
+
+Directory names: `mcp_server/`, `backend/`, `libs/`
+
+## Multi-Database Strategy
+
+### Supabase (Postgres + pgvector)
+- **Purpose:** Normalized policies, benefits, quotations, policy_embeddings
+- **Client:** `backend/database/postgres_client.py`
+- **Not Created Yet:** Run schema creation scripts in `database/postgres/`
+
+### Neo4j (Graph Database)
+- **Purpose:** Policy relationships, claims analysis for recommendations
+- **Client:** `backend/database/neo4j_client.py`
+- **URL:** `bolt://localhost:7687` (local) or Neo4j Aura (production)
+- **Requires:** APOC plugin (included in docker-compose)
+
+### DynamoDB (Payment Records) ✅ **Implemented**
+- **Purpose:** Payment transactions, session tracking
+- **Client:** `backend/database/dynamodb_client.py`
+- **Table:** `lea-payments-local` with GSIs (user_id, quote_id, stripe_session_id)
+- **Local Dev:** DynamoDB Local on port 8000, Admin UI on port 8010
+
+### Mem0 (Conversation Memory)
+- **Purpose:** Customer context, preferences across sessions
+- **Client:** `backend/database/mem0_client.py`
+- **API Key:** Required in `.env`
+
+### Stripe (Payment Processing) ✅ **Implemented**
+- **Service:** `backend/services/stripe_integration.py`
+- **Webhooks:** `backend/services/payment/stripe_webhook.py`
+- **Test Mode:** Use `sk_test_...` keys from Stripe dashboard
+
+## Data Assets Ready to Load
+
+1. **Taxonomy_Hackathon.json** - `database/supabase/taxonomy/` (5,484 lines)
+2. **3 Policy PDFs** - `database/policy_wordings/` (original policy documents)
+3. **Claims_Data_DB.pdf** - `database/neo4j/claims/` (proprietary MSIG data)
+
+## FastMCP Server Tools (12 Total)
+
+**Block 1: Policy Intelligence** (3 tools) - TODO
+- `compare_policies`, `explain_coverage`, `search_policies`
+
+**Block 2: FAQ** (1 tool) - TODO
+- `answer_question`
+
+**Block 3: Document Intelligence** (3 tools) - TODO
+- `upload_document`, `extract_travel_data`, `generate_quotation`
+
+**Block 4: Purchase** (4 tools) ✅ **COMPLETE**
+- `initiate_purchase` - Create Stripe checkout session
+- `check_payment_status` - Poll payment status (DynamoDB)
+- `complete_purchase` - Generate policy after successful payment
+- `cancel_payment` - Cancel pending payment
+
+**Block 5: Analytics** (2 tools) - TODO
+- `get_recommendations`, `analyze_destination_risk`
+
+**Memory** (1 tool) - TODO
+- `manage_conversation_memory`
+
+## Testing MCP Tools
+
+**Two approaches:**
+
+### 1. MCP Inspector (Visual UI)
+```bash
+npx @modelcontextprotocol/inspector uv run python -m mcp_server.server
 ```
 
-## Code Organization Conventions
+### 2. FastMCP Client (Python Script)
+```python
+from fastmcp import Client
+from mcp_server.server import mcp
 
-- **Files:** snake_case (e.g., `policy_service.py`)
-- **Classes:** PascalCase (e.g., `PolicyService`)
-- **Functions:** snake_case (e.g., `get_policy`)
-- **Constants:** UPPER_CASE (e.g., `MAX_UPLOAD_SIZE`)
-- **Models → Services → API Routers:** Clear separation of concerns
-- **Database Clients:** Data access layer abstraction
+async def test_tools():
+    async with Client(mcp) as client:
+        # List available tools
+        tools = await client.list_tools()
 
-## Data Assets
+        # Call a tool
+        result = await client.call_tool("initiate_purchase", {
+            "user_id": "user_123",
+            "quote_id": "quote_456",
+            "amount": 15000,
+            "currency": "SGD",
+            "product_name": "Premium Travel Insurance",
+            "customer_email": "test@example.com"
+        })
+        print(result)
+```
 
-### Ready to Load
-1. **Taxonomy_Hackathon.json** (`database/supabase/taxonomy/`) - 5,484 lines of normalized policy data
-2. **3 Policy PDFs** (`database/policy_wordings/`) - Original policy documents for dual-layer intelligence
-3. **Claims_Data_DB.pdf** (`database/neo4j/claims/`) - Proprietary MSIG claims data for Block 5
+## Common Issues
 
-### Database Schemas
-Database schemas are not yet created. Expected tables:
-- **Supabase:** policies, benefits, conditions, quotations, purchases, customers, policy_embeddings
-- **Neo4j:** Policy, Benefit, Condition, Claim, Destination nodes with relationships
+### MCP Server Module Import Errors
+- Use `python -m mcp_server.server`, NOT `python -m mcp-server.server`
+- Ensure `__init__.py` exists in `mcp_server/` directory
 
-## Implementation Priorities
+### Backend Not Connecting
+- Verify FastAPI is running: `curl http://localhost:8000/health`
+- Check `.env` has correct `BACKEND_URL=http://localhost:8000`
 
-**✅ Phase 0: Payment Integration (COMPLETE - v0.2.0)**
-1. ✅ DynamoDB payment records with GSIs
-2. ✅ Stripe checkout session integration
-3. ✅ Webhook event processing (completed, failed, expired)
-4. ✅ Purchase service orchestration
-5. ✅ Payment API endpoints (9 routes)
-6. ✅ MCP payment tools (4 tools)
-7. ✅ Beautiful success/cancel pages
-8. ✅ Local development environment (DynamoDB Local + Admin UI)
+### DynamoDB Connection Fails
+- Ensure Docker is running: `docker ps | grep dynamodb`
+- Check port 8000 not in use by other services
+- Re-initialize table: `python -m database.dynamodb.init_payments_table`
 
-**Phase 1: Database Foundation (TODO)**
-1. Create Postgres schema and load Taxonomy_Hackathon.json
-2. Define Neo4j graph schema
-3. Generate embeddings for vector search
+### Stripe Webhook Not Receiving Events
+- For local dev, use Stripe CLI: `stripe listen --forward-to localhost:8000/webhook/stripe`
+- Copy webhook secret from CLI output to `.env` as `STRIPE_WEBHOOK_SECRET`
 
-**Phase 2: Core Services (TODO)**
-1. Implement policy ingestion and normalization (`backend/services/policy_service.py`)
-2. Build vector search service (`backend/services/vector_search_service.py`)
-3. Create OCR pipeline (`libs/ocr/` and `backend/services/document_service.py`)
-4. Implement quotation engine (`backend/services/quotation_service.py`)
+## Key Files
 
-**Phase 3: API & MCP Integration (TODO)**
-1. Implement API router handlers for Blocks 1-3, 5
-2. Implement MCP tool handlers for Blocks 1-3, 5
-3. Connect tools to backend API via `backend_client.py`
+- **[backend/config.py](backend/config.py)** - All 122 environment variables with Pydantic Settings
+- **[mcp_server/server.py](mcp_server/server.py)** - Main MCP server with 12 tool definitions
+- **[backend/main.py](backend/main.py)** - FastAPI application entry point
+- **[backend/routers/purchase_router.py](backend/routers/purchase_router.py)** - Payment API endpoints (9 routes)
+- **[backend/services/purchase_service.py](backend/services/purchase_service.py)** - Purchase orchestration logic
+- **.env.example** - Complete environment template with all required keys
 
-**Phase 4: Analytics (TODO)**
-1. Implement claims analysis and recommendation system
-2. Load claims data into Neo4j
+## Type Safety
 
-## Key Documentation Files
+Python 3.11+ type hints are required everywhere. MyPy strict mode is enabled:
+```python
+from typing import Optional, List, Dict, Any
 
-- **README.md** - Complete architecture overview and project vision
-- **ARCHITECTURE_STATUS.md** - Detailed implementation progress (41% complete)
-- **GETTING_STARTED.md** - Step-by-step 6-week implementation guide
-- **.env.example** - Complete environment template with 122 configuration variables
-- **database/supabase/taxonomy/Travel Insurance Product Taxonomy - Documentation.pdf** - Taxonomy documentation
-
-## Common Issues & Solutions
-
-### Environment Setup
-- Ensure Python 3.11+ is installed (`python --version`)
-- All API keys must be set in `.env` (Anthropic, OpenAI, Supabase, Neo4j, Stripe)
-- Neo4j requires APOC plugin (included in docker-compose)
-
-### Database Connections
-- Supabase URL format: `https://<project>.supabase.co`
-- Neo4j URL format: `bolt://localhost:7687`
-- Use connection pooling for production (configured in `backend/config.py`)
-
-### OCR Setup
-- Tesseract must be installed on system: `brew install tesseract` (macOS)
-- EasyOCR downloads models on first run (~100MB)
-
-### MCP Integration
-- MCP server runs separately from FastAPI backend
-- Tools communicate with backend via HTTP client
-- Test tools individually before integration
+async def search_policies(
+    query: str,
+    limit: int = 10
+) -> List[Dict[str, Any]]:
+    ...
+```

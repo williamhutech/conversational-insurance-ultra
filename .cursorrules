@@ -1,1 +1,9 @@
 use context7 mcp all the time to update latest docs
+I am using uv to manage this project python package
+
+# MCP Inspector IMPORTANT NOTES:
+# 1. MCP tools CANNOT use **kwargs - FastMCP does not support variable keyword arguments
+#    Use Dict[str, Any] parameter instead: user_info: Dict[str, Any] | None = None
+# 2. MCP Inspector command: npx @modelcontextprotocol/inspector uv run python -m mcp_server.server
+#    (NOT python -m mcp-server.server with hyphen, use underscore)
+# 3. Test MCP tools directly with backend_client, don't rely only on Inspector UI

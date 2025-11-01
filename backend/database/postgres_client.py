@@ -188,6 +188,177 @@ class SupabaseClient:
         pass
 
     # -------------------------------------------------------------------------
+    # Selection Operations (Quotation-Payment Mapping)
+    # -------------------------------------------------------------------------
+
+    async def get_selection_by_payment_id(
+        self, payment_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get selection record with related quotation data by payment_id.
+        
+        This is used to find the Ancileo quote and offer information
+        when completing a purchase after payment.
+        
+        Args:
+            payment_id: Payment intent ID from Stripe
+        
+        Returns:
+            Dictionary with selection and quotation data:
+            - selection fields (selection_id, quote_id, insureds, main_contact, etc.)
+            - quotation fields (quote_id is Ancileo quote ID, offer_id, etc.)
+            - None if not found
+        """
+        if not self.client:
+            await self.connect()
+        
+        try:
+            # Query selections table
+            response = self.client.table('selections')\
+                .select('*')\
+                .eq('payment_id', payment_id)\
+                .limit(1)\
+                .execute()
+            
+            if not response.data:
+                logger.info(f"No selection found for payment_id: {payment_id}")
+                return None
+            
+            selection = response.data[0]
+            
+            # Get related quotation data
+            quote_id = selection.get('quote_id')
+            if quote_id:
+                quote = await self.get_quotation_with_offers(quote_id)
+                if quote:
+                    selection['quotes'] = quote
+            
+            logger.info(f"Found selection {selection['selection_id']} for payment {payment_id}")
+            return selection
+            
+        except Exception as e:
+            logger.error(f"Error getting selection by payment_id: {e}")
+            raise
+
+    async def create_selection(
+        self, selection_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Create a new selection record.
+        
+        Args:
+            selection_data: Dictionary with:
+                - user_id: User ID
+                - quote_id: Quote ID (FK) - this is the Ancileo quote ID directly
+                - insureds: JSONB with insured persons
+                - main_contact: JSONB with main contact info
+                - selected_offer_id: Selected offer ID
+                - product_type: Product type (default: "travel-insurance")
+                - quantity: Quantity (default: 1)
+                - total_price: Total price
+                - is_send_email: Whether to send email (default: true)
+                - status: Status (default: "draft")
+        
+        Returns:
+            Created selection record
+        """
+        if not self.client:
+            await self.connect()
+        
+        try:
+            # Set defaults
+            selection_data.setdefault('status', 'draft')
+            selection_data.setdefault('product_type', 'travel-insurance')
+            selection_data.setdefault('quantity', 1)
+            selection_data.setdefault('is_send_email', True)
+            
+            response = self.client.table('selections')\
+                .insert(selection_data)\
+                .execute()
+            
+            logger.info(f"Created selection: {response.data[0]['selection_id']}")
+            return response.data[0]
+            
+        except Exception as e:
+            logger.error(f"Error creating selection: {e}")
+            raise
+
+    async def update_selection_payment_id(
+        self, selection_id: str, payment_id: str
+    ) -> Dict[str, Any]:
+        """
+        Update selection with payment_id to link quotation to payment.
+        
+        Args:
+            selection_id: Selection UUID
+            payment_id: Payment intent ID
+        
+        Returns:
+            Updated selection record
+        """
+        if not self.client:
+            await self.connect()
+        
+        try:
+            response = self.client.table('selections')\
+                .update({
+                    'payment_id': payment_id,
+                    'status': 'pending_payment',
+                    'updated_at': 'now()'
+                })\
+                .eq('selection_id', selection_id)\
+                .execute()
+            
+            logger.info(f"Updated selection {selection_id} with payment_id {payment_id}")
+            return response.data[0]
+            
+        except Exception as e:
+            logger.error(f"Error updating selection payment_id: {e}")
+            raise
+
+    async def get_quotation_with_offers(
+        self, quote_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get quotation with full Ancileo response and offers.
+        
+        Args:
+            quote_id: Quote ID
+        
+        Returns:
+            Quotation record with quotation_response parsed
+        """
+        if not self.client:
+            await self.connect()
+        
+        try:
+            response = self.client.table('quotes')\
+                .select('*')\
+                .eq('quote_id', quote_id)\
+                .limit(1)\
+                .execute()
+            
+            if not response.data:
+                return None
+            
+            quote = response.data[0]
+            
+            # Parse quotation_response to extract offers
+            quotation_response = quote.get('quotation_response', {})
+            if isinstance(quotation_response, dict):
+                offer_categories = quotation_response.get('offerCategories', [])
+                if offer_categories:
+                    quote['offers'] = offer_categories[0].get('offers', [])
+                else:
+                    quote['offers'] = []
+            
+            return quote
+            
+        except Exception as e:
+            logger.error(f"Error getting quotation with offers: {e}")
+            raise
+
+    # -------------------------------------------------------------------------
     # Customer Operations
     # -------------------------------------------------------------------------
 
