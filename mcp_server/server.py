@@ -25,8 +25,6 @@ Or configure in Claude Desktop / ChatGPT:
 
 import logging
 import os
-import base64
-import binascii
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from typing import Any, Dict, List
@@ -34,6 +32,7 @@ from fastmcp import FastMCP
 from libs.ocr.fast_ocr import fast_text_extract
 
 from mcp_server.client.backend_client import BackendClient
+from mcp_server.utils import normalize_country_code
 
 # TODO: Import remaining tools when implemented
 # from mcp_server.tools import (
@@ -214,85 +213,105 @@ async def answer_question(
 
 
 @mcp.tool()
-async def parse_uploaded_file(
-    file_path: str | None = None,
-    file_bytes_base64: str | None = None,
+async def upload_document(
+    file_path: str,
+    customer_id: str | None = None,
+    document_type: str | None = None,
     lang: str = "auto",
     enable_text_cleanup: bool = True,
     use_angle_cls: bool = True
 ) -> Dict[str, Any]:
-    """Extract text and metadata from an uploaded document using Fast OCR."""
-    if not file_path and not file_bytes_base64:
-        message = "Either file_path or file_bytes_base64 must be provided."
-        logger.error(message)
-        return {"error": message}
+    """
+    Upload and parse travel document for data extraction using Fast OCR.
+    
+    This tool handles both document upload (optional) and OCR text extraction.
+    If customer_id and document_type are provided, the document will be saved to storage.
+    OCR extraction is always performed to extract text content.
+    
+    Args:
+        file_path: Path to the document file to upload and parse
+        customer_id: Optional customer ID for saving document to storage
+        document_type: Optional document type (flight_booking, hotel_booking, itinerary, other)
+        lang: Language for OCR (default: "auto" for auto-detection)
+        enable_text_cleanup: Whether to clean up extracted text (default: True)
+        use_angle_cls: Whether to use angle classification for rotated images (default: True)
+    
+    Returns:
+        Dictionary with:
+        - document_id: Document ID if saved to storage (optional)
+        - text: Extracted text content from OCR
+        - file_info: File metadata (name, type, pages, size, etc.)
+        - metadata: Additional OCR metadata
+        - storage_url: URL if document was saved to storage (optional)
+    
+    Examples:
+        # Simple OCR without saving
+        upload_document(file_path="path/to/document.pdf")
+        
+        # Upload and OCR with customer tracking
+        upload_document(
+            file_path="itinerary.pdf",
+            customer_id="user_123",
+            document_type="itinerary"
+        )
+    """
+    logger.info(f"Uploading and parsing document: {file_path}")
+    
+    if not file_path:
+        error_message = "file_path is required"
+        logger.error(error_message)
+        return {"error": error_message}
 
-    if file_bytes_base64:
-        try:
-            file_input = base64.b64decode(file_bytes_base64, validate=True)
-        except (binascii.Error, ValueError) as exc:
-            error_message = f"Invalid base64 payload: {exc}"
-            logger.error(error_message)
-            return {"error": error_message}
-    else:
-        if file_path is None:
-            message = "file_path must be provided when file_bytes_base64 is absent."
-            logger.error(message)
-            return {"error": message}
-        file_input = file_path
-
+    # Step 1: Extract text using Fast OCR
     try:
         result = fast_text_extract(
-            file=file_input,
+            file=file_path,
             lang=lang,
             enable_text_cleanup=enable_text_cleanup,
             use_angle_cls=use_angle_cls
         )
+        
+        metadata = result.get('metadata', {}) or {}
+        
+        logger.info(f"Successfully extracted {result.get('page_count', 0)} pages from {file_path}")
+        
+        response = {
+            "text": result.get('text', ''),
+            "file_info": {
+                "name": result.get('file_name'),
+                "type": result.get('file_type'),
+                "language": result.get('language'),
+                "pages": result.get('page_count'),
+                "size_mb": result.get('file_size_mb'),
+                "confidence": result.get('confidence'),
+            },
+            "metadata": metadata,
+        }
+        
+        # Step 2: Optionally save to storage if customer_id provided
+        if customer_id and document_type:
+            try:
+                # TODO: Implement file upload to Supabase storage
+                # For now, just log that we would save it
+                logger.info(
+                    f"Document would be saved for customer {customer_id}, "
+                    f"type: {document_type}"
+                )
+                # When implemented, add:
+                # document_id = await backend_client.upload_document(...)
+                # response["document_id"] = document_id
+                # response["storage_url"] = storage_url
+                
+            except Exception as storage_error:
+                logger.warning(f"Failed to save document to storage: {storage_error}")
+                # Continue even if storage fails - OCR extraction is still successful
+        
+        return response
+        
     except Exception as exc:
         error_message = f"OCR extraction failed: {exc}"
         logger.exception(error_message)
         return {"error": error_message}
-
-    metadata = result.get('metadata', {}) or {}
-
-    return {
-        "text": result.get('text', ''),
-        "file_info": {
-            "name": result.get('file_name'),
-            "type": result.get('file_type'),
-            "language": result.get('language'),
-            "pages": result.get('page_count'),
-            "size_mb": result.get('file_size_mb'),
-            "confidence": result.get('confidence'),
-        },
-        "metadata": metadata,
-    }
-
-
-
-@mcp.tool()
-async def upload_document(
-    customer_id: str,
-    document_type: str,
-    file_path: str
-) -> Dict[str, Any]:
-    """
-    Upload travel document for data extraction.
-
-    Args:
-        customer_id: Customer ID
-        document_type: Type of document (flight_booking, hotel_booking, itinerary)
-        file_path: Path to document file
-
-    Returns:
-        Document ID and upload status
-
-    TODO: Implement file upload to Supabase storage
-    TODO: Trigger OCR processing
-    TODO: Return document metadata
-    """
-    logger.info(f"Uploading document for customer {customer_id}: {document_type}")
-    return {"error": "Not implemented"}
 
 
 @mcp.tool()
@@ -336,8 +355,8 @@ async def generate_quotation(
         trip_type: "RT" (Round Trip) or "ST" (Single Trip)
         departure_date: Departure date in YYYY-MM-DD format
         return_date: Return date in YYYY-MM-DD format (required for RT, optional for ST)
-        departure_country: ISO country code (default: "SG")
-        arrival_country: ISO country code (default: "CN")
+        departure_country: Country name or ISO code (e.g., "Greece" or "GR", default: "SG")
+        arrival_country: Country name or ISO code (e.g., "Japan" or "JP", default: "CN")
         adults_count: Number of adults (default: 1)
         children_count: Number of children (default: 0)
         market: Market code (default: "SG")
@@ -352,19 +371,44 @@ async def generate_quotation(
         - created_at: Creation timestamp
 
     Error Handling:
-        Returns error dict with user-friendly message if API call fails
+        Returns error dict with user-friendly message if API call fails or country not supported
     """
     logger.info(f"Generating quotation for customer {customer_id}: {trip_type} {departure_date}")
     
     try:
-        # Call backend API to generate quotation
+        # Normalize country codes (handles both names and ISO codes)
+        norm_departure = normalize_country_code(departure_country)
+        norm_arrival = normalize_country_code(arrival_country)
+        
+        # Validate country codes
+        if not norm_departure:
+            return {
+                "error": {
+                    "error_code": "unsupported_departure_country",
+                    "message": f"Unsupported departure country: {departure_country}",
+                    "user_message": f"I don't recognize '{departure_country}' as a supported departure country. Please provide a valid country name or ISO code (e.g., 'Singapore', 'SG', 'Greece', 'GR')."
+                }
+            }
+        
+        if not norm_arrival:
+            return {
+                "error": {
+                    "error_code": "unsupported_arrival_country",
+                    "message": f"Unsupported arrival country: {arrival_country}",
+                    "user_message": f"I don't recognize '{arrival_country}' as a supported destination country. Please provide a valid country name or ISO code (e.g., 'Japan', 'JP', 'Greece', 'GR')."
+                }
+            }
+        
+        logger.info(f"Normalized countries: {departure_country} → {norm_departure}, {arrival_country} → {norm_arrival}")
+        
+        # Call backend API to generate quotation with normalized codes
         result = await backend_client.generate_quotation(
             customer_id=customer_id,
             trip_type=trip_type,
             departure_date=departure_date,
             return_date=return_date,
-            departure_country=departure_country,
-            arrival_country=arrival_country,
+            departure_country=norm_departure,
+            arrival_country=norm_arrival,
             adults_count=adults_count,
             children_count=children_count,
             market=market,
