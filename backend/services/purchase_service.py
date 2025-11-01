@@ -377,9 +377,15 @@ class PurchaseService:
             # Update DynamoDB status
             await self.dynamodb_client.update_payment_status(
                 payment_intent_id=payment_intent_id,
-                payment_status="cancelled",
-                failure_reason=reason or "User cancelled"
+                status="cancelled"
             )
+
+            # Add cancellation reason
+            if reason:
+                await self.dynamodb_client.update_payment(
+                    payment_intent_id=payment_intent_id,
+                    updates={"failure_reason": reason}
+                )
 
             logger.info(f"Cancelled payment {payment_intent_id}")
             return True
