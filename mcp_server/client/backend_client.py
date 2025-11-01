@@ -28,16 +28,22 @@ class BackendClient:
     - Response validation
     """
 
-    def __init__(self, base_url: str = "http://localhost:8085"):
+    def __init__(self, base_url: str | None = None):
         """
         Initialize backend client.
 
         Args:
-            base_url: Backend API base URL (default: http://localhost:8085)
+            base_url: Backend API base URL (default: from environment or http://localhost:8000)
 
-        TODO: Load base_url from environment variable
         TODO: Add authentication token handling
         """
+        import os
+
+        # Get backend URL from environment or use default
+        if base_url is None:
+            backend_host = os.getenv("BACKEND_HOST", "localhost")
+            backend_port = os.getenv("BACKEND_PORT", "8000")
+            base_url = f"http://{backend_host}:{backend_port}"
         self.base_url = base_url.rstrip("/")
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
@@ -457,6 +463,138 @@ class BackendClient:
         TODO: Implement GET /api/v1/analytics/destination-risk/{destination}
         """
         pass
+
+    # -------------------------------------------------------------------------
+    # Memory Management
+    # -------------------------------------------------------------------------
+
+    async def add_memory(
+        self,
+        user_id: str,
+        messages: List[Dict[str, str]],
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Add memory for user from conversation messages.
+
+        Args:
+            user_id: User identifier
+            messages: List of messages with 'role' and 'content'
+            metadata: Optional metadata
+
+        Returns:
+            Memory creation response with IDs
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        try:
+            response = await self.client.post(
+                "/api/v1/memory/add",
+                json={
+                    "user_id": user_id,
+                    "messages": messages,
+                    "metadata": metadata
+                }
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPError as e:
+            logger.error(f"Error adding memory: {e}")
+            raise
+
+    async def search_memories(
+        self,
+        user_id: str,
+        query: str,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Search user memories using semantic similarity.
+
+        Args:
+            user_id: User identifier
+            query: Search query
+            limit: Maximum results
+
+        Returns:
+            List of matching memories with scores
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        try:
+            response = await self.client.post(
+                "/api/v1/memory/search",
+                json={
+                    "user_id": user_id,
+                    "query": query,
+                    "limit": limit
+                }
+            )
+            response.raise_for_status()
+            result = response.json()
+            return result.get('results', [])
+
+        except httpx.HTTPError as e:
+            logger.error(f"Error searching memories: {e}")
+            raise
+
+    async def get_all_memories(
+        self,
+        user_id: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all memories for a user.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            List of all user memories
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        try:
+            response = await self.client.get(
+                f"/api/v1/memory/{user_id}"
+            )
+            response.raise_for_status()
+            result = response.json()
+            return result.get('results', [])
+
+        except httpx.HTTPError as e:
+            logger.error(f"Error getting memories: {e}")
+            raise
+
+    async def delete_memory(
+        self,
+        memory_id: str
+    ) -> Dict[str, Any]:
+        """
+        Delete a specific memory by ID.
+
+        Args:
+            memory_id: Memory identifier to delete
+
+        Returns:
+            Deletion confirmation
+
+        Raises:
+            httpx.HTTPError: If request fails
+        """
+        try:
+            response = await self.client.delete(
+                f"/api/v1/memory/{memory_id}"
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPError as e:
+            logger.error(f"Error deleting memory: {e}")
+            raise
 
 
 # Global client instance

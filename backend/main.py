@@ -16,6 +16,7 @@ import logging
 
 from backend.config import settings
 from backend.routers import purchase_router
+from backend.routers.memory import router as memory_router
 from backend.services.payment.stripe_webhook import app as webhook_app
 from backend.services.payment.payment_pages import app as pages_app
 
@@ -127,6 +128,9 @@ app.include_router(
     purchase_router,
     prefix="/api"
 )
+
+# Memory Management (supports all blocks)
+app.include_router(memory_router)
 
 # Mount Payment Webhook Handler (separate FastAPI app for isolation)
 app.mount("/webhook", webhook_app)
