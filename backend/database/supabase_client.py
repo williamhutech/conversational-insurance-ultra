@@ -411,7 +411,7 @@ class SupabaseClient:
 
         try:
             response = await self.openai.embeddings.create(
-                model=os.getenv("DEFAULT_EMBEDDING_MODEL", "text-embedding-3-large"),
+                model="text-embedding-3-large",
                 input=text,
                 dimensions=2000
             )
