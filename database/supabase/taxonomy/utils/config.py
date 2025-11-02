@@ -14,11 +14,11 @@ class TaxonomyLoaderConfig(BaseSettings):
     """Configuration for taxonomy data loader with dual embeddings"""
 
     # Supabase Configuration
-    supabase_url: str = Field(
+    supabase_structured_url: str = Field(
         ...,
         description="Supabase project URL (https://wjfypbbzucwmvsrkqytc.supabase.co)"
     )
-    supabase_service_key: str = Field(
+    supabase_structured_service_key: str = Field(
         ...,
         description="Supabase service role key (for write access)"
     )
@@ -92,7 +92,7 @@ class TaxonomyLoaderConfig(BaseSettings):
         extra="ignore"
     )
 
-    @field_validator("supabase_url")
+    @field_validator("supabase_structured_url")
     @classmethod
     def validate_supabase_url(cls, v: str) -> str:
         """Ensure Supabase URL is properly formatted"""
@@ -143,8 +143,8 @@ class TaxonomyLoaderConfig(BaseSettings):
     def get_supabase_config(self) -> dict:
         """Get Supabase client configuration"""
         return {
-            "url": self.supabase_url,
-            "key": self.supabase_service_key,
+            "url": self.supabase_structured_url,
+            "key": self.supabase_structured_service_key,
         }
 
     def get_rate_limit_config(self) -> dict:

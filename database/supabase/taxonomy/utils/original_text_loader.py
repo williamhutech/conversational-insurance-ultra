@@ -9,16 +9,19 @@ from pathlib import Path
 from typing import List, Dict, Any
 from supabase import create_client, Client
 
+from dotenv import load_dotenv
 from .config import TaxonomyLoaderConfig, load_config
 from .original_text_models import (
     OriginalTextRecord,
     OriginalTextStats,
     ProductDocument
 )
+
 from .text_chunker import TextChunker
 from .original_text_embedding_service import OriginalTextEmbeddingService
 
-
+# Load environment variables from .env
+load_dotenv()
 class OriginalTextLoader:
     """
     ETL pipeline for loading raw policy text with embeddings.
@@ -29,15 +32,15 @@ class OriginalTextLoader:
         self.config = config
 
         # Validate service key format
-        if not self._is_service_role_key(config.supabase_service_key):
+        if not self._is_service_role_key(config.supabase_structured_service_key):
             print("⚠️  WARNING: SUPABASE_SERVICE_KEY may not be a service role key!")
             print("   Service role keys typically start with 'eyJ' and are longer than anon keys.")
             print("   Make sure you're using the SERVICE ROLE key, not the ANON key.")
             print("   RLS policies require service role for INSERT operations.\n")
 
         self.supabase: Client = create_client(
-            config.supabase_url,
-            config.supabase_service_key
+            config.supabase_structured_url,
+            config.supabase_structured_service_key
         )
         self.embedding_service = OriginalTextEmbeddingService(config)
         self.chunker = TextChunker(
