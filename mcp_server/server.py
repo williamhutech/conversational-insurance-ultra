@@ -1064,6 +1064,106 @@ async def analyze_destination_risk(destination: str) -> Dict[str, Any]:
     return {"error": "Not implemented"}
 
 
+@mcp.tool()
+async def get_claims_data_insight(query: str, sql_num: int = 5) -> Dict[str, Any]:
+    """
+    Generate data-driven insights from MSIG's historical claims database using multi-agent analysis.
+
+    This tool analyzes MSIG's proprietary claims database to identify patterns matching the customer's
+    travel profile, destination, and activities. It uses a multi-agent LLM system to:
+    1. Plan multiple analytical topics from the query
+    2. Generate SQL queries for each topic in parallel
+    3. Execute queries against the PostgreSQL claims database
+    4. Synthesize actionable insurance recommendations
+
+    Use this tool when:
+    - Customer asks about destination-specific risk patterns
+    - Need to recommend product tiers based on historical claim amounts
+    - Want to provide data-driven coverage recommendations
+    - Analyzing claim frequency or severity for specific scenarios
+
+    Args:
+        query: User's question about claims patterns, risk analysis, or coverage recommendations
+        sql_num: Number of analytical topics/insights to generate (default: 3, recommended: 2-5)
+
+    Returns:
+        Dictionary with:
+        - success: Boolean indicating if analysis succeeded
+        - insights: Formatted string with numbered insights
+        - insight_count: Number of insights generated
+
+        Or on error:
+        - error: Error details
+        - message: User-friendly error message
+
+    Examples:
+        >>> await get_claims_data_insight(
+        ...     query="What medical coverage should I get for travel to Japan?",
+        ...     sql_num=5
+        ... )
+        Returns insights like:
+        "insight_1: Based on 145 claims to Japan, 78% of medical claims exceeded SGD 5,000...,
+         insight_2: Adventure sports claims in Japan average SGD 12,300...,
+         insight_3: We recommend Silver plan (SGD 10,000 medical coverage) over Basic......"
+
+    Note:
+        - Analysis uses o3 model for planning and gpt-4.1 for SQL generation
+        - Query execution is read-only and validated for safety
+        - Failed SQL queries are still included in the analysis context
+    """
+    logger.info(f"Getting claims data insights for query: '{query}' (sql_num={sql_num})")
+
+    try:
+        # Validate sql_num
+        if sql_num < 1 or sql_num > 10:
+            return {
+                "error": {
+                    "error_code": "invalid_parameter",
+                    "message": f"sql_num must be between 1 and 10, got {sql_num}",
+                    "user_message": "I can generate between 1 and 10 insights. Please specify a number in that range."
+                }
+            }
+
+        # Call backend to get claims intelligence service
+        # Since we don't have a direct backend endpoint, we'll call the service directly
+        from backend.services.claims_intelligence_service import get_claims_intelligence_service
+
+        service = await get_claims_intelligence_service()
+        status_code, result = await service.analyze_claims(query, sql_num)
+
+        if status_code == 0:
+            # Success
+            logger.info(f"Claims analysis successful, generated {sql_num} insights")
+            return {
+                "success": True,
+                "insights": result,
+                "insight_count": sql_num,
+                "query": query
+            }
+        else:
+            # Failure
+            logger.error(f"Claims analysis failed: {result}")
+            return {
+                "error": {
+                    "error_code": "analysis_failed",
+                    "message": result,
+                    "user_message": f"I encountered an issue analyzing the claims data: {result}. This could be due to database connectivity or LLM processing errors. Please try rephrasing your query or try again later."
+                }
+            }
+
+    except Exception as e:
+        logger.error(f"Error getting claims data insights: {e}", exc_info=True)
+        error_message = str(e)
+
+        return {
+            "error": {
+                "error_code": "claims_insight_failed",
+                "message": error_message,
+                "user_message": f"I couldn't analyze the claims data right now due to a technical issue. Please try again later or contact support if the problem persists."
+            }
+        }
+
+
 # =============================================================================
 # Memory Management Tool
 # =============================================================================

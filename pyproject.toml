@@ -239,6 +239,7 @@ dependencies = [
     "onnxruntime>=1.23.2",
     "rapidocr>=3.4.2",
     "boto3>=1.40.64",
+    "asyncpg>=0.30.0",
 ]
 
 [project.optional-dependencies]

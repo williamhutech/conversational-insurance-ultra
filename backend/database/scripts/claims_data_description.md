@@ -1,25 +1,3 @@
-# MSIG Travel Insurance Claims Database Documentation
-
-## Database Overview
-
-**Database Name:** hackathon_db  
-**Schema:** hackathon  
-**Table:** claims  
-**Purpose:** MSIG travel insurance claims data for travel insurance products
-
----
-
-## Connection Details
-
-- **Host:** hackathon-db.ceqjfmi6jhdd.ap-southeast-1.rds.amazonaws.com
-- **Port:** 5432
-- **Database:** hackathon_db
-- **Schema:** hackathon
-- **Username:** hackathon_user
-- **Password:** Hackathon2025!
-
----
-
 ## Table Schema: `claims`
 
 ### Primary Key
