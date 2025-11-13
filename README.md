@@ -9,6 +9,8 @@
 
 ---
 
+<img width="1562" height="898" alt="CleanShot 2025-11-13 at 17 49@2x" src="https://github.com/user-attachments/assets/de4dd6d7-c377-49bd-b5c9-9d416ea1f028" />
+
 ## Platform Overview
 
 Conversational Insurance Ultra transforms travel insurance shopping into a seamless AI-powered experience. Built on a sophisticated 3-tier architecture with production-grade integrations, the platform includes:
